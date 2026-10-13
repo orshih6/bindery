@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -515,7 +516,9 @@ func (s *Scanner) placeDroppedFormat(ctx context.Context, book *models.Book, aut
 		if lastErr == nil {
 			lastErr = fmt.Errorf("no book files could be placed")
 		}
-		return "", false, lastErr
+		// A template that cannot name an ebook with an extension is the
+		// operator's to fix, so it blocks rather than spending retries.
+		return "", errors.Is(lastErr, ErrEbookNoExtension), lastErr
 	}
 	return folder, false, nil
 }
@@ -526,6 +529,10 @@ func (s *Scanner) placeDroppedFormat(ctx context.Context, book *models.Book, aut
 // (StateImportFailed — retryable as-is).
 func (s *Scanner) failDrop(ctx context.Context, dl *models.Download, blocked bool, err error) {
 	if blocked {
+		// importPending cannot move straight to importBlocked, and a drop runs
+		// from importPending, so without this the block was dropped silently
+		// and the download sat pending.
+		s.updateDownloadStatus(ctx, dl.ID, models.StateImporting)
 		s.failImport(ctx, dl, models.StateImportBlocked, fmt.Sprintf("drop folder destination invalid: %v", err))
 		return
 	}

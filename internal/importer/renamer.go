@@ -162,6 +162,7 @@ var ErrEbookNoExtension = errors.New("the destination would have no file extensi
 // recovered as from the file's content. Audio tokens are excluded so a stray
 // audio signature never renames an ebook to .mp3.
 var ebookExtensionFormats = map[string]bool{
+	"azw":                  true,
 	formatsniff.FormatEPUB: true, formatsniff.FormatMOBI: true, formatsniff.FormatPDF: true,
 	formatsniff.FormatDJVU: true, formatsniff.FormatCBZ: true, formatsniff.FormatCBR: true,
 	formatsniff.FormatAZW3: true, formatsniff.FormatFB2: true, formatsniff.FormatTXT: true,
@@ -191,8 +192,17 @@ func ebookExt(srcPath string) string {
 func (r *Renamer) DestPath(rootFolder string, author *models.Author, book *models.Book, series, seriesNumber, srcPath string) (string, error) {
 	ext := ebookExt(srcPath)
 	dest := filepath.Join(rootFolder, r.apply(r.template, author, book, series, seriesNumber, ext))
-	if ext == "" || len(filepath.Ext(dest)) < 2 ||
-		(templateHasToken(r.template, "ext") && !strings.HasSuffix(strings.ToLower(dest), "."+strings.ToLower(ext))) {
+	if ext == "" || len(filepath.Ext(dest)) < 2 {
+		return "", ErrEbookNoExtension
+	}
+	if templateHasToken(r.template, "ext") {
+		if !strings.HasSuffix(strings.ToLower(dest), "."+strings.ToLower(ext)) {
+			return "", ErrEbookNoExtension
+		}
+	} else if strings.ContainsAny(filepath.Ext(dest), " \t") {
+		// A template with no {ext} must still end in a real extension. A space in
+		// what filepath.Ext found means a dot inside the title ("Dr. Book"), not
+		// an extension.
 		return "", ErrEbookNoExtension
 	}
 	return ensureContained(dest, rootFolder)

@@ -797,7 +797,11 @@ and refreshes the `metadata.opf` sidecar when you have that turned on.
 The file extension comes from the file's current name. If a file has lost its
 extension (for example from a template with `{Title}{ext}` and no dot), Bindery
 takes it back from the file's rename history, or failing that from what is
-inside the file (epub, mobi, pdf and similar). Fix the template to
+inside the file (epub, mobi, pdf and similar). History is preferred, except
+that a file whose contents are clearly a different format (a PDF, say) gets the
+extension of its contents. Content sniffing cannot tell mobi, azw3 and prc
+apart, so a file recovered that way gets `.mobi`, which Calibre and Kindle tools
+read by content. Fix the template to
 `{Title}.{ext}` and run Rename files again to repair those files. A file whose
 extension cannot be worked out is shown as **Error** and left alone, and so is
 any move where the template would produce a name with no extension. Put a dot
