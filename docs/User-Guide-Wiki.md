@@ -794,6 +794,17 @@ move is always a move, never a copy, so hardlinks survive and nothing is
 duplicated. Bindery also prunes the folder a file left behind when it empties,
 and refreshes the `metadata.opf` sidecar when you have that turned on.
 
+The file extension comes from the file's current name. If a file has lost its
+extension (for example from a template with `{Title}{ext}` and no dot), Bindery
+takes it back from the file's rename history, or failing that from what is
+inside the file (epub, mobi, pdf and similar). Fix the template to
+`{Title}.{ext}` and run Rename files again to repair those files. A file whose
+extension cannot be worked out is shown as **Error** and left alone, and so is
+any move where the template would produce a name with no extension. Put a dot
+before `{ext}` in the ebook template, and leave `{ext}` out of the audiobook
+folder template, which names a folder and has no extension to fill in. Saving
+an audiobook template with `{ext}` is refused.
+
 Three scopes, all the same preview:
 
 | Scope | Where |

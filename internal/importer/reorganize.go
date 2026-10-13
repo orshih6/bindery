@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/vavallee/bindery/internal/importer/formatsniff"
 	"github.com/vavallee/bindery/internal/models"
 )
 
@@ -145,9 +147,16 @@ func (s *Scanner) proposedPathFor(ctx context.Context, book *models.Book, author
 		dest, err = s.destRenamer(ctx).AudiobookDestDir(root, author, book, seriesTitle, seriesNum)
 	} else {
 		root := s.effectiveLibraryDir(ctx, author)
-		dest, err = s.destRenamer(ctx).DestPath(root, author, book, seriesTitle, seriesNum, f.Path)
+		dest, err = s.destRenamer(ctx).DestPath(root, author, book, seriesTitle, seriesNum, s.ebookSourceName(ctx, book.ID, f.Path))
 	}
 	if err != nil {
+		// An ebook that lost its extension and cannot get it back reads as
+		// missing when it is not on disk at all, since that is the real problem.
+		if errors.Is(err, ErrEbookNoExtension) {
+			if _, serr := os.Stat(f.Path); os.IsNotExist(serr) {
+				return "", ReorgStatusMissing, "tracked file is not on disk"
+			}
+		}
 		return "", ReorgStatusError, err.Error()
 	}
 
@@ -205,6 +214,45 @@ func (s *Scanner) proposedPathFor(ctx context.Context, book *models.Book, author
 		return dest, ReorgStatusCollision, "another book already tracks the destination path"
 	}
 	return dest, ReorgStatusMove, ""
+}
+
+// ebookSourceName returns the name DestPath should take the extension from for
+// a tracked ebook. Normally that is the path itself. A file that has lost its
+// extension (#3217) gets it back from the bookRenamed history, which records
+// every Reorganize move as from/to: the extension of the path it was renamed
+// from, followed back through earlier renames, is the one it had before the
+// loss. That is exact where content cannot be (azw3 and cbz look like mobi and
+// a bare zip), so it goes before the content sniff DestPath falls back to.
+func (s *Scanner) ebookSourceName(ctx context.Context, bookID int64, path string) string {
+	if filepath.Ext(path) != "" || s.history == nil {
+		return path
+	}
+	events, err := s.history.ListByBook(ctx, bookID)
+	if err != nil {
+		return path
+	}
+	cur := path
+	for range events {
+		moved := false
+		for _, e := range events {
+			if e.EventType != models.HistoryEventBookRenamed {
+				continue
+			}
+			var d struct{ From, To string }
+			if json.Unmarshal([]byte(e.Data), &d) != nil || d.To != cur || d.From == "" {
+				continue
+			}
+			if formatsniff.FromExtension(d.From) != "" {
+				return d.From
+			}
+			cur, moved = d.From, true
+			break
+		}
+		if !moved {
+			break
+		}
+	}
+	return path
 }
 
 func isSingleFile(path string) bool {
