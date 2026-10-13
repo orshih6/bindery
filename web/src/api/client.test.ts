@@ -40,7 +40,7 @@ describe('api/client CSRF handling', () => {
     await initCSRF()
     await api.authLogout()
 
-    expect(csrfRequests).toEqual([{ credentials: 'include', requestedWith: 'bindery-ui' }])
+    expect(csrfRequests).toEqual([{ credentials: 'same-origin', requestedWith: 'bindery-ui' }])
     expect(logoutCSRF).toBe('json-token')
   })
 
