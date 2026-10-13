@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // headerLen is how much of the file is read for signature matching. The
@@ -69,7 +67,7 @@ func DetectContent(path string) string {
 	// O_NONBLOCK so opening a FIFO (or other special file) a tracked path might
 	// point at returns at once instead of waiting for a writer, and the fstat
 	// below then refuses it. Only a regular file is ever read.
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0) // #nosec G304 -- path comes from the importer's own scan of the download directory
+	f, err := openNonBlocking(path)
 	if err != nil {
 		return ""
 	}
