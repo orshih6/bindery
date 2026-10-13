@@ -294,7 +294,7 @@ func TestDropEbookName_UsesRecoveredExtension(t *testing.T) {
 func TestImport_BlockedByTemplateWithoutExtension(t *testing.T) {
 	libraryDir := t.TempDir()
 	downloadPath := t.TempDir()
-	if err := os.WriteFile(filepath.Join(downloadPath, "book.epub"), []byte("epub-bytes"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(downloadPath, "book.epub"), bookSized("epub-bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s, dl, dlRepo, _, ctx := dataLossFixture(t, libraryDir, "copy")
@@ -319,7 +319,7 @@ func TestDrop_TemplatedBlockedByTemplateWithoutExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	downloadDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(downloadDir, "x.epub"), []byte("epub"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(downloadDir, "x.epub"), bookSized("epub"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dl := newDropDownload(t, downloads, book, ctx)
