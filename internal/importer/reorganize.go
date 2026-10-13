@@ -150,13 +150,6 @@ func (s *Scanner) proposedPathFor(ctx context.Context, book *models.Book, author
 		dest, err = s.destRenamer(ctx).DestPath(root, author, book, seriesTitle, seriesNum, s.ebookSourceName(ctx, book.ID, f.Path))
 	}
 	if err != nil {
-		// An ebook that lost its extension and cannot get it back reads as
-		// missing when it is not on disk at all, since that is the real problem.
-		if errors.Is(err, ErrEbookNoExtension) {
-			if _, serr := os.Stat(f.Path); os.IsNotExist(serr) {
-				return "", ReorgStatusMissing, "tracked file is not on disk"
-			}
-		}
 		return "", ReorgStatusError, err.Error()
 	}
 
