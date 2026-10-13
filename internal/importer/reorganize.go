@@ -237,7 +237,7 @@ func (s *Scanner) ebookSourceName(ctx context.Context, bookID int64, path string
 		return path
 	}
 	histFormat := formatsniff.FromExtension(hist)
-	switch sniffed := formatsniff.DetectContent(path); sniffed {
+	switch sniffed := sniffContent(path); sniffed {
 	case "":
 		return hist
 	case formatsniff.FormatMOBI:

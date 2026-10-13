@@ -169,6 +169,27 @@ var ebookExtensionFormats = map[string]bool{
 	formatsniff.FormatRTF: true,
 }
 
+// sniffTimeout bounds how long a content sniff may take. formatsniff opens the
+// path to read its first bytes, and opening a FIFO blocks until a writer shows
+// up, so a tracked path that is a FIFO would otherwise hang a Reorganize preview
+// (#3217). A file that does not answer in time is treated as unreadable, which
+// leaves it without a recovered extension. The abandoned open stays parked on
+// its own goroutine until the FIFO gets a writer, a cost paid only by a tracked
+// book file that is a FIFO.
+const sniffTimeout = time.Second
+
+// sniffContent is formatsniff.DetectContent with a deadline.
+func sniffContent(path string) string {
+	done := make(chan string, 1)
+	go func() { done <- formatsniff.DetectContent(path) }()
+	select {
+	case format := <-done:
+		return format
+	case <-time.After(sniffTimeout):
+		return ""
+	}
+}
+
 // ebookExt returns the extension (no dot) DestPath will use for srcPath: the
 // path's own extension, or, when it has none, the format read from the file's
 // content. Empty when neither answers.
@@ -176,7 +197,7 @@ func ebookExt(srcPath string) string {
 	if ext := strings.TrimPrefix(filepath.Ext(srcPath), "."); ext != "" {
 		return ext
 	}
-	if format := formatsniff.DetectContent(srcPath); ebookExtensionFormats[format] {
+	if format := sniffContent(srcPath); ebookExtensionFormats[format] {
 		return format
 	}
 	return ""

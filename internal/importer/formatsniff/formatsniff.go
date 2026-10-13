@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -64,17 +65,11 @@ func Detect(path string) string {
 // DetectContent identifies a format from the file's leading bytes, or returns
 // "" when no signature matches.
 func DetectContent(path string) string {
-	// O_NONBLOCK so opening a FIFO (or other special file) a tracked path might
-	// point at returns at once instead of waiting for a writer, and the fstat
-	// below then refuses it. Only a regular file is ever read.
-	f, err := openNonBlocking(path)
+	f, err := os.Open(path) // #nosec G304 -- path comes from the importer's own scan of the download directory
 	if err != nil {
 		return ""
 	}
 	defer f.Close() //nolint:errcheck
-	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
-		return ""
-	}
 
 	header := make([]byte, headerLen)
 	n, err := io.ReadFull(f, header)
