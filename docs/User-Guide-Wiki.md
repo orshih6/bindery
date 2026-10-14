@@ -584,20 +584,43 @@ so unique chapter names are never taken for other books. Titles such as
 `Chapter 12`, `Track 03`, a bare number, `Prologue`, `Credits`, and promo
 material (`Excerpt from ...`, preview, sample, bonus, interview, `Also by`,
 teaser, trailer) say nothing about the book and are ignored, and so is a file
-with no usable title.
+with no usable title. An album that is a placeholder (`Unknown Album`, `Unknown`,
+`Untitled`), a publisher credit (`Audible`, `Audible Studios`, `Audiobook`,
+`Blackstone Audio` and a few others), a web address or domain name, the file's own
+artist, album artist or composer tag (a narrator filed as the album), or written
+in a script with no Latin letters when the book's title has Latin letters, is
+also no usable title.
 
-A file supports the book when its title equals the book's title (series suffix,
-subtitle, `(Volume 1)` style qualifier, leading article, `&` against `and`,
-case and accents all ignored) or contains it as whole words, so a short title
-like `Dune` is supported by `Dune Messiah`. A file that carries another volume
-of the same series (`NYPD Red 4` for `NYPD Red 3`) does not. The download is
-flagged when either at least two files do not support the book and at least one
-does or at least two different other titles appear, or at least two files carry
-another volume of the book's own series. A download where every file carries one
-other title is not flagged, because that is what a translated or retitled
-edition looks like. A wanted box set, omnibus, collection or anthology is not
-compared. At most 500 files are read, spread across the folder, so the cost of
-an import does not grow with the size of the download.
+A file supports the book when its title matches the book's title the way an
+ebook's does (see above: series suffix, subtitle, a subtitle of two or more words
+that is not a generic label, `(Volume 1)` style qualifier, leading article, `&`
+against `and`, case, accents, `Dr` against `Doctor`, spelled numbers against
+digits) or contains it as whole words, so a short title like `Dune` is supported
+by `Dune Messiah`. For `Mistborn: The Final Empire` both `Mistborn: The Final
+Empire` and `The Final Empire` support the book. A file that carries another
+volume of the same series (`NYPD Red 4` for `NYPD Red 3`) does not.
+
+The download is flagged when either of these holds:
+
+- at least two files do not support the book, those files are at least 5 percent
+  of the tracks read, and either at least one file does support it or at least
+  two different other titles appear;
+- at least two files carry another volume of the book's own series, and they are
+  at least 5 percent of the tracks read.
+
+The 5 percent floor means two bonus files or two series intro files in a folder of
+sixty do not flag it. A download where every file carries one other title is not
+flagged, because that is what a translated or retitled edition looks like; the
+`contentCheck` object then carries `retitled` with the title and the number of
+files, in `warn` and in `block` mode alike, and History shows a single quiet line.
+Nothing is blocked and no message changes. A wanted box set, omnibus, anthology,
+trilogy, duology, quartet, series or saga title, a `Complete Works` or `Collected
+Works` title, a counted set such as `Four Novels` and a numeric range such as
+`Harry Potter 1-7` is not compared. Ordinary titles that merely contain the words
+complete, collection or best of (`The Complete Maus`, `The Best of Me`) are
+compared. At most 500 files are read, spread across the folder, and the whole
+check has a 30 second budget: if reading runs out of time the check fails open,
+the audiobook imports, and the `contentCheck` object says `truncated: true`.
 
 The setting is **Check audiobook contents** next to the ebook one
 (`import.audiobook.content_check`, admin only) and works the same way:

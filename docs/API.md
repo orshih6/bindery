@@ -1034,7 +1034,11 @@ audiobook (#3246) the object reports what the audio tags said:
 name the book, and `mismatches` the other works found with the number of files
 each, most files first and capped at 10 titles (`moreTitles` says how many were
 left out). `sampled: true` appears when the download held more than 500 audio
-files and a sample spread across the folder was read. The text is
+files and a sample spread across the folder was read. `retitled`
+(`{title, files}`) appears on a pass where no file supports the book and every
+file names one other title, with an empty `mismatches` list. `truncated: true`
+means the 30 second budget ran out and the check failed open; `tracksRead` is how
+far it got. The text is
 cleaned like other text that comes from outside Bindery: control characters are
 removed, length is capped, and `@`, `<`, `>`, `[`, `]` and the `://` of a URL are
 replaced with fullwidth lookalikes, so a hostile file cannot mention a channel or

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/vavallee/bindery/internal/db"
@@ -105,17 +106,50 @@ func (r contentCheckResult) blocks() bool { return r.flagged && r.mode == conten
 // as well as the rest would.
 const maxContentCheckEpubReads = 20
 
-// compilationWordRe matches the words a compilation names itself with that the
-// catalogue's bundle detection does not treat as a bundle on its own: "The
-// Complete Sherlock Holmes", "Collected Stories", "An Anthology", "Best of Poe".
-var compilationWordRe = regexp.MustCompile(`(?i)\b(?:complete|collected|anthology|anthologies|collection|collections|omnibus|treasury|best of|short stories)\b`)
+// compilationRe matches the wording a compilation names itself with that the
+// catalogue's bundle detection does not catch: an omnibus or anthology, collected
+// or complete works, novels or short stories, a counted set ("Four Novels"), a
+// trilogy, duology or quartet, "The Complete X Series", and a series or saga as
+// the last word ("The Dark Tower Series", "Foundation Saga").
+//
+// Bare words that are also ordinary title words are deliberately absent:
+// complete, collection, treasury, best of. "The Best of Me", "Complete Control",
+// "The Complete Maus" and "A Collection of Curses" are single books, and skipping
+// them would silently turn the check off for them.
+var compilationRe = regexp.MustCompile(`(?i)` +
+	`\b(?:omnibus|anthology|anthologies` +
+	`|collected\s+(?:works|stories|novels|poems|essays)` +
+	`|complete\s+(?:works|novels|short\s+stories|stories|poems|collection)` +
+	`|box(?:ed)?\s+set` +
+	`|(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:novels|books|volumes)` +
+	`|trilogy|duology|quartet|quintet|tetralogy|pentalogy)\b` +
+	`|^the\s+complete\s+.+\s+series\b` +
+	`|\S\s+(?:saga|series)\s*$`)
+
+// numberRangeRe matches a numeric range after a title word: "Dune Chronicles
+// 1-3", "Harry Potter 1-7". The second number must be larger than the first.
+var numberRangeRe = regexp.MustCompile(`[A-Za-z)]\s+(\d{1,2})\s*-\s*(\d{1,2})\s*$`)
+
+func hasNumberRange(title string) bool {
+	m := numberRangeRe.FindStringSubmatch(strings.TrimSpace(title))
+	if m == nil {
+		return false
+	}
+	a, errA := strconv.Atoi(m[1])
+	b, errB := strconv.Atoi(m[2])
+	return errA == nil && errB == nil && b > a
+}
 
 // bookIsCompilation reports whether a wanted book is a box set, omnibus,
-// anthology or pack. Its files legitimately carry the titles of other works, so
-// there is nothing to compare. Skipping on a word too many only costs a missed
-// mismatch, which is the safe direction.
+// anthology, trilogy or other pack. Its files legitimately carry the titles of
+// other works, so there is nothing to compare. Skipping on a title too many only
+// costs a missed mismatch, which is the safe direction, but a wrong skip also
+// switches the check off for a book that deserved it, so the list is strict.
+// A single book that is really several parts ("The Lord of the Rings", "The
+// Chronicles of Narnia") is a documented limit.
 func bookIsCompilation(title string) bool {
-	return metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != "" || compilationWordRe.MatchString(title)
+	return metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != "" ||
+		compilationRe.MatchString(title) || hasNumberRange(title)
 }
 
 // splitCreators breaks a dc:creator string that credits several people into one

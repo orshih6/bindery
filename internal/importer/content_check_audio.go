@@ -3,12 +3,16 @@ package importer
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/vavallee/bindery/internal/indexer"
 	"github.com/vavallee/bindery/internal/indexer/newznab"
 	"github.com/vavallee/bindery/internal/models"
+	"github.com/vavallee/bindery/internal/textutil"
 )
 
 // Audiobook half of the post-download content check (#3246). See content_check.go
@@ -31,6 +35,12 @@ const settingImportAudiobookContentCheck = "import.audiobook.content_check"
 // is a pack, and a sample of it is still decisive, because the flag rules look
 // at proportions and at distinct titles, not exact counts.
 const maxContentCheckTagReads = 500
+
+// contentCheckBudget is the wall clock the whole audiobook check may use. When it
+// runs out the check stops reading and fails open: the download imports as if
+// the check had not run, and the contentCheck note says it was cut short. A var
+// so a test can shorten it.
+var contentCheckBudget = 30 * time.Second
 
 // maxContentCheckTitles caps how many other works the contentCheck object and a
 // block message list.
@@ -55,6 +65,10 @@ type audiobookContentResult struct {
 	mismatches []audioWorkCount
 	// flagged is true when the download looks like it holds other works.
 	flagged bool
+	// retitled is set when no file supports the book and every file that names
+	// a work names the same other one: the download passes (that is what a
+	// translated or retitled edition looks like) but the pass is recorded.
+	retitled *audioWorkCount
 }
 
 // workTitleKey is the grouping key of a work title: folded, any trailing
@@ -80,6 +94,39 @@ func workTitleKey(title string) string {
 func usableWorkTitle(title string) bool {
 	title = strings.TrimSpace(title)
 	return title != "" && !genericTrackTitle(title) && !promoTrackTitle(title) && workTitleKey(title) != ""
+}
+
+// noTitleAlbums are tag values that name no work: placeholders a ripper or a tag
+// editor leaves behind, and the publisher credits some releases put in the album
+// field. The list is short on purpose.
+var noTitleAlbums = map[string]bool{
+	"unknown": true, "unknown album": true, "untitled": true, "untitled album": true, "album": true,
+	"no album": true, "various": true, "audiobook": true, "audiobooks": true, "audible": true,
+	"audible studios": true, "audible inc": true, "blackstone audio": true, "blackstone publishing": true,
+	"tantor audio": true, "tantor media": true, "recorded books": true, "brilliance audio": true,
+	"penguin audio": true, "macmillan audio": true, "hachette audio": true, "random house audio": true,
+	"harpercollins audio": true, "simon and schuster audio": true, "graphicaudio": true,
+}
+
+// urlLikeRe matches a web address or a bare domain: a release group stamping its
+// name into the album field.
+var urlLikeRe = regexp.MustCompile(`(?i)://|\bwww\.|\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|info|ru|to|me|cc|io|biz|xyz)\b`)
+
+// tagNamesNoWork reports whether an album or track title in a file's tags names
+// no work: a placeholder, a publisher credit, a web address, or the file's own
+// artist, album artist or composer (narrators and authors are often filed as the
+// album).
+func tagNamesNoWork(t AudioTags, title string) bool {
+	k := textutil.FoldForSearch(title)
+	if k == "" || noTitleAlbums[k] || urlLikeRe.MatchString(title) {
+		return true
+	}
+	for _, who := range []string{t.Artist, t.AlbumArtist, t.Composer} {
+		if who != "" && textutil.FoldForSearch(who) == k {
+			return true
+		}
+	}
+	return false
 }
 
 // evaluateAudiobookContent decides whether the tags of a download say it holds
@@ -139,12 +186,12 @@ func evaluateAudiobookContent(wanted string, tags []AudioTags) audiobookContentR
 			// An album tag decides the file's work. A generic or promo album
 			// leaves the file without a title rather than falling back to the
 			// track title, which names a chapter, not a book.
-			if keyOf(album) != "" {
+			if keyOf(album) != "" && !tagNamesNoWork(t, album) {
 				works[i] = album
 			}
 			continue
 		}
-		if title := strings.TrimSpace(t.Title); keyOf(title) != "" {
+		if title := strings.TrimSpace(t.Title); keyOf(title) != "" && !tagNamesNoWork(t, title) {
 			k := keyOf(title)
 			trackKeys[i] = k
 			trackCounts[k]++
@@ -201,9 +248,20 @@ func evaluateAudiobookContent(wanted string, tags []AudioTags) audiobookContentR
 		return res.mismatches[i].title < res.mismatches[j].title
 	})
 
-	ruleA := otherFiles >= 2 && (res.matches >= 1 || len(others) >= 2)
-	ruleB := res.conflicts >= 2
+	// Both rules ignore a handful of strays: the files that do not support the
+	// book must be at least 5 percent of the tracks read. Two bonus files or two
+	// intro files in a folder of sixty are not another book.
+	ruleA := otherFiles >= 2 && (res.matches >= 1 || len(others) >= 2) && otherFiles*20 >= res.tracksRead
+	ruleB := res.conflicts >= 2 && res.conflicts*20 >= res.tracksRead
 	res.flagged = ruleA || ruleB
+
+	// A download where no file supports the book and every file that names a
+	// work names the same other one passes (a translated or retitled edition
+	// looks like that), but the pass is recorded.
+	if !res.flagged && res.matches == 0 && len(res.mismatches) == 1 && res.mismatches[0].count >= 2 {
+		rt := res.mismatches[0]
+		res.retitled = &rt
+	}
 	return res
 }
 
@@ -214,6 +272,11 @@ func evaluateAudiobookContent(wanted string, tags []AudioTags) audiobookContentR
 func (r audiobookContentResult) data(wantedTitle, wantedAuthor string, sampled bool) map[string]any {
 	listed := make([]map[string]any, 0, maxContentCheckTitles)
 	for i, m := range r.mismatches {
+		if !r.flagged {
+			// A pass (the retitled note) lists no mismatches: nothing was found
+			// to be wrong, and the note carries the one other title.
+			break
+		}
 		if i >= maxContentCheckTitles {
 			break
 		}
@@ -227,11 +290,14 @@ func (r audiobookContentResult) data(wantedTitle, wantedAuthor string, sampled b
 		"matches":    r.matches,
 		"mismatches": listed,
 	}
-	if more := len(r.mismatches) - len(listed); more > 0 {
+	if more := len(r.mismatches) - len(listed); more > 0 && r.flagged {
 		d["moreTitles"] = more
 	}
 	if sampled {
 		d["sampled"] = true
+	}
+	if r.retitled != nil {
+		d["retitled"] = map[string]any{"title": safeFileText(r.retitled.title), "files": r.retitled.count}
 	}
 	return d
 }
@@ -304,9 +370,18 @@ func (s *Scanner) checkAudiobookContent(ctx context.Context, book *models.Book, 
 		audio = sampleEvenly(audio, maxContentCheckTagReads)
 		sampled = true
 	}
+	bookAuthor := ""
+	if author != nil {
+		bookAuthor = author.Name
+	}
+
+	// The whole check gets one wall clock budget. A read in flight is not
+	// interrupted, so the budget is checked between files.
+	budgetCtx, cancel := context.WithTimeout(ctx, contentCheckBudget)
+	defer cancel()
 	tags := make([]AudioTags, 0, len(audio))
 	for _, f := range audio {
-		if ctx.Err() != nil {
+		if budgetCtx.Err() != nil {
 			break
 		}
 		t, err := s.audioTags(f)
@@ -315,13 +390,30 @@ func (s *Scanner) checkAudiobookContent(ctx context.Context, book *models.Book, 
 		}
 		tags = append(tags, t)
 	}
-	res := evaluateAudiobookContent(book.Title, tags)
-	if !res.flagged {
+	if ctx.Err() != nil {
+		// The import's own context ended: the answer is incomplete, and acting
+		// on it (a refusal writes to the database) is not possible anyway.
 		return contentCheckResult{mode: mode}
 	}
-	bookAuthor := ""
-	if author != nil {
-		bookAuthor = author.Name
+	if budgetCtx.Err() != nil {
+		// Out of time. Fail open, and say so: the import goes ahead and the
+		// contentCheck note records that the check was cut short.
+		slog.Warn("audiobook content check ran out of time; importing without it",
+			"bookID", book.ID, "tracksRead", len(tags), "files", len(audio), "budget", contentCheckBudget)
+		return contentCheckResult{mode: mode, data: map[string]any{
+			"kind":       "audiobook",
+			"bookTitle":  safeFileText(book.Title),
+			"bookAuthor": safeFileText(bookAuthor),
+			"tracksRead": len(tags),
+			"truncated":  true,
+		}}
+	}
+	res := evaluateAudiobookContent(book.Title, tags)
+	if !res.flagged {
+		if res.retitled == nil {
+			return contentCheckResult{mode: mode}
+		}
+		return contentCheckResult{mode: mode, data: res.data(book.Title, bookAuthor, sampled)}
 	}
 	return contentCheckResult{
 		mode:    mode,

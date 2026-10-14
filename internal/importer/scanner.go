@@ -1878,7 +1878,7 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 	// file itself. See content_check.go.
 	var contentCheck map[string]any
 	if detectedFormat != models.MediaTypeAudiobook && len(bookFiles) > 0 && grabbedForBook && book != nil && !isManualImport(ctx) {
-		if res := s.checkEbookContent(ctx, book, author, bookFiles); res.flagged {
+		if res := s.checkEbookContent(ctx, book, author, bookFiles); res.flagged || res.data != nil {
 			if res.blocks() {
 				slog.Warn("import blocked: file looks like a different book",
 					"title", dl.Title, "bookID", book.ID, "book", book.Title)
@@ -1887,8 +1887,10 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 				s.failImportWithCheck(ctx, dl, models.StateImportBlocked, res.reason, res.data)
 				return
 			}
-			slog.Warn("downloaded file looks like a different book; importing it because import.ebook.content_check is warn",
-				"title", dl.Title, "bookID", book.ID, "book", book.Title)
+			if res.flagged {
+				slog.Warn("downloaded file looks like a different book; importing it because import.ebook.content_check is warn",
+					"title", dl.Title, "bookID", book.ID, "book", book.Title)
+			}
 			contentCheck = res.data
 		}
 	}
@@ -1952,7 +1954,7 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 		// or file placed. Skipped for a manual import, Match to book and a
 		// book matched from the file's own metadata. See content_check_audio.go.
 		if grabbedForBook && !isManualImport(ctx) {
-			if res := s.checkAudiobookContent(ctx, book, author, bookFiles); res.flagged {
+			if res := s.checkAudiobookContent(ctx, book, author, bookFiles); res.flagged || res.data != nil {
 				if res.blocks() {
 					slog.Warn("import blocked: audio tags show other books in the download",
 						"title", dl.Title, "bookID", book.ID, "book", book.Title)
@@ -1961,8 +1963,10 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 					s.failImportWithCheck(ctx, dl, models.StateImportBlocked, res.reason, res.data)
 					return
 				}
-				slog.Warn("downloaded audiobook holds other books; importing it because import.audiobook.content_check is warn",
-					"title", dl.Title, "bookID", book.ID, "book", book.Title)
+				if res.flagged {
+					slog.Warn("downloaded audiobook holds other books; importing it because import.audiobook.content_check is warn",
+						"title", dl.Title, "bookID", book.ID, "book", book.Title)
+				}
 				contentCheck = res.data
 			}
 		}

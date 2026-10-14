@@ -66,8 +66,8 @@ function nonEmptyString(v: unknown): string {
 // around the values come from the translation.
 function contentCheckDetail(raw: unknown, t: Translate): string {
   if (!raw || typeof raw !== 'object') return ''
-  const cc = raw as { kind?: unknown; mismatches?: unknown }
-  if (!Array.isArray(cc.mismatches) || cc.mismatches.length === 0) return ''
+  const cc = raw as { kind?: unknown; mismatches?: unknown; retitled?: unknown; truncated?: unknown }
+  if (!Array.isArray(cc.mismatches) || cc.mismatches.length === 0) return quietContentCheckNote(cc, t)
   const found = (cc.mismatches as unknown[])
     .map((m): string => {
       if (!m || typeof m !== 'object' || Array.isArray(m)) return ''
@@ -88,6 +88,19 @@ function contentCheckDetail(raw: unknown, t: Translate): string {
   if (!found) return ''
   const label = cc.kind === 'ebook' ? t('history.contentCheckEbook') : t('history.contentCheckAudiobook')
   return `${label}: ${found}`
+}
+
+// The notes a content check leaves when it found nothing wrong: every file named
+// the same other title (a retitled or translated edition passes), or the check
+// ran out of time and was skipped. One quiet line, no headline.
+function quietContentCheckNote(cc: { retitled?: unknown; truncated?: unknown }, t: Translate): string {
+  if (cc.retitled && typeof cc.retitled === 'object' && !Array.isArray(cc.retitled)) {
+    const rt = cc.retitled as { title?: unknown; files?: unknown }
+    const title = nonEmptyString(rt.title)
+    if (title && typeof rt.files === 'number') return t('history.contentCheckRetitled', { title, count: rt.files })
+  }
+  if (cc.truncated === true) return t('history.contentCheckTruncated')
+  return ''
 }
 
 function baseEventDetail(type: string, parsed: ReturnType<typeof parseEventData>): string {

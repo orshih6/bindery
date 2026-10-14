@@ -70,10 +70,27 @@ func contentTitleForms(title string) []string {
 	add(noSeries)
 	main, sub := indexer.SplitSubtitle(noSeries)
 	add(main)
-	if sub != "" && looksLikeSeriesPrefix(main) && significantTitleTokens(sub) >= 2 {
+	// The subtitle is an accepted form when it is a title of its own: at least
+	// two meaningful words, and either the main title reads as a series prefix
+	// or the subtitle does not end in a generic word ("A LitRPG Adventure", "A
+	// Novel"), which tells a book nothing.
+	if sub != "" && significantTitleTokens(sub) >= 2 && (looksLikeSeriesPrefix(main) || !genericSubtitleTail(sub)) {
 		add(sub)
 	}
 	return out
+}
+
+var genericSubtitleTails = map[string]bool{
+	"novel": true, "adventure": true, "thriller": true, "mystery": true, "memoir": true, "story": true,
+	"stories": true, "romance": true, "saga": true, "tale": true, "edition": true, "audiobook": true,
+	"unabridged": true, "series": true,
+}
+
+// genericSubtitleTail reports whether a subtitle ends in a word that labels a
+// kind of book rather than naming one.
+func genericSubtitleTail(sub string) bool {
+	toks := strings.Fields(textutil.FoldForSearch(sub))
+	return len(toks) > 0 && genericSubtitleTails[toks[len(toks)-1]]
 }
 
 // titleFoldVariants folds s into the comparison alphabet and returns it, plus

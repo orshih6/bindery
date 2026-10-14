@@ -312,11 +312,19 @@ func TestAudiobookContentCheck_BlockImportsTheCleanShapes(t *testing.T) {
 		f.assertImportedSilently(t)
 	})
 	t.Run("a translated edition whose every file carries one other title", func(t *testing.T) {
-		f := newAudioFixture(t, "The Hobbit", "J. R. R. Tolkien")
+		f := newAudioFixture(t, "The Lord of the Rings", "J. R. R. Tolkien")
 		f.setMode(t, audioCheckKey, "block")
-		f.writeAlbum(t, "Der Hobbit", 40)
+		f.writeAlbum(t, "Der Herr der Ringe", 40)
 		f.importDownload(t)
-		f.assertImportedSilently(t)
+		dl, _ := f.reload(t)
+		if dl.Status != models.StateImported || f.blocklisted(t) {
+			t.Fatalf("status = %q (%s), blocklisted = %v, want a clean import", dl.Status, dl.ErrorMessage, f.blocklisted(t))
+		}
+		// The pass is recorded as a quiet note and nothing else.
+		cc, _ := f.eventData(t, models.HistoryEventBookImported)["contentCheck"].(map[string]any)
+		if rt, _ := cc["retitled"].(map[string]any); rt["title"] != "Der Herr der Ringe" {
+			t.Errorf("no retitled note: %v", cc)
+		}
 	})
 }
 
@@ -491,7 +499,7 @@ func TestAudiobookContentCheck_FileTextIsNeutralisedBeforeItIsSent(t *testing.T)
 	f := newAudioFixture(t, "Chase", "Author Name")
 	f.setMode(t, audioCheckKey, "block")
 	f.writeAlbum(t, "Chase", 2)
-	f.writeAlbum(t, "@everyone <!channel> [click](https://evil.example/x)", 5)
+	f.writeAlbum(t, "@everyone <!channel> [click](evil)", 5)
 	f.importDownload(t)
 
 	dl, _ := f.reload(t)
@@ -508,7 +516,7 @@ func TestAudiobookContentCheck_FileTextIsNeutralisedBeforeItIsSent(t *testing.T)
 		t.Fatalf("no importFailed event: %v", err)
 	}
 	for name, text := range map[string]string{"message": dl.ErrorMessage, "webhook": string(blob), "history": events[0].Data} {
-		for _, bad := range []string{"@everyone", "<!channel>", "](https://", "://"} {
+		for _, bad := range []string{"@everyone", "<!channel>", "](evil)"} {
 			if strings.Contains(text, bad) {
 				t.Errorf("%s still contains %q: %s", name, bad, text)
 			}

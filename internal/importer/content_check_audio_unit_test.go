@@ -254,8 +254,8 @@ func TestEvaluateAudiobookContent_CapsTheTitleList(t *testing.T) {
 // A wanted box set or omnibus has nothing to compare.
 func TestBookIsCompilation(t *testing.T) {
 	yes := []string{
-		"Alex Cross Box Set", "The Hobbit Omnibus", "The Complete Sherlock Holmes", "Collected Stories of Raymond Carver",
-		"Dangerous Women: An Anthology", "Books 1-3", "The Lord of the Rings Collection", "Best of Poe",
+		"Alex Cross Box Set", "The Hobbit Omnibus", "Collected Stories of Raymond Carver",
+		"Dangerous Women: An Anthology", "Books 1-3", "Alex Cross Boxed Set",
 	}
 	for _, s := range yes {
 		if !bookIsCompilation(s) {
@@ -289,6 +289,12 @@ func TestEvaluateAudiobookContent_NegativeCorpus(t *testing.T) {
 		{"series number prefix on the book", "The Stormlight Archive 4: Rhythm of War", "Rhythm of War"},
 		{"series prefix on the album", "The Colour of Magic", "Discworld 1: The Colour of Magic"},
 		{"series position suffix on the album", "Mary, Mary", "Mary, Mary: Alex Cross, Book 11"},
+		{"subtitle only album", "Mistborn: The Final Empire", "The Final Empire"},
+		{"subtitle only album with a book suffix", "The Lord of the Rings: The Fellowship of the Ring", "The Fellowship of the Ring, Book One"},
+		{"spelled number", "Slaughterhouse-Five", "Slaughterhouse 5"},
+		{"hyphen and apostrophe spelling", "The Hitch-Hiker's Guide to the Galaxy", "The Hitchhiker's Guide to the Galaxy"},
+		{"ordinary title with the word complete", "The Complete Maus", "The Complete Maus"},
+		{"ordinary title with the words best of", "The Best of Me", "The Best of Me"},
 		{"translated title", "The Lord of the Rings", "Der Herr der Ringe"},
 		{"transliterated title", "Voina i mir", "Voyna i mir"},
 		{"compilation of one author's works", "The Complete Sherlock Holmes", "A Study in Scarlet"},

@@ -35,6 +35,8 @@ vi.mock('react-i18next', () => ({
         'history.contentCheckEbookTitleOnly': '"{{title}}"',
         'history.contentCheckEbookAuthorOnly': 'by {{author}}',
         'history.contentCheckAudiobookEntry': '{{title}} ({{count}})',
+        'history.contentCheckRetitled': 'Every file is titled "{{title}}" ({{count}} files), so it was imported as a retitled edition',
+        'history.contentCheckTruncated': 'The content check ran out of time and was skipped',
         'history.allEventTypes': 'All event types',
         'history.empty': 'No history events found',
         'history.emptyHint': 'Grabs, imports and failures land here as they happen.',
@@ -446,6 +448,51 @@ describe('HistoryPage', () => {
     ).toBeInTheDocument()
     // Nothing usable in the list: the row falls back to its path.
     expect(within(rowFor('Null Mismatches')).getByText('/library/n.epub')).toBeInTheDocument()
+  })
+
+  it('shows one quiet line for a retitled pass and for a check that ran out of time', async () => {
+    vi.mocked(api.listHistory).mockResolvedValue({
+      items: [
+        makeHistory({
+          id: 1,
+          eventType: 'bookImported',
+          sourceTitle: 'Retitled Release',
+          data: JSON.stringify({
+            path: '/audiobooks/Chase',
+            contentCheck: { kind: 'audiobook', tracksRead: 40, matches: 0, mismatches: [], retitled: { title: 'Corralled', files: 40 } },
+          }),
+        }),
+        makeHistory({
+          id: 2,
+          eventType: 'bookImported',
+          sourceTitle: 'Slow Release',
+          data: JSON.stringify({ contentCheck: { kind: 'audiobook', tracksRead: 12, truncated: true } }),
+        }),
+        makeHistory({
+          id: 3,
+          eventType: 'bookImported',
+          sourceTitle: 'Odd Note',
+          data: JSON.stringify({ path: '/x', contentCheck: { kind: 'audiobook', retitled: { title: 7, files: 'many' } } }),
+        }),
+      ],
+      total: 3,
+      limit: 100,
+      offset: 0,
+    })
+
+    renderHistoryPage()
+    const table = await findDesktopTable()
+    expect(await within(table).findByText('Retitled Release')).toBeInTheDocument()
+    expect(
+      within(rowFor('Retitled Release')).getByText(
+        'Every file is titled "Corralled" (40 files), so it was imported as a retitled edition \u00b7 /audiobooks/Chase',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(rowFor('Slow Release')).getByText('The content check ran out of time and was skipped'),
+    ).toBeInTheDocument()
+    // A malformed note is ignored and the row falls back to its path.
+    expect(within(rowFor('Odd Note')).getByText('/x')).toBeInTheDocument()
   })
 
   it('takes the wording around a content check entry from the translation', async () => {
