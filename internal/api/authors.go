@@ -1633,7 +1633,7 @@ func (h *AuthorHandler) refreshAuthorProfile(ctx context.Context, author *models
 	if !mergeAuthorProfileFields(author, upstream) {
 		// Nothing new, so skip the whole row write, but the profile was
 		// checked: stamp freshness with a single column write so the
-		// staggered nightly refresh does not fetch it again today (#2595).
+		// staggered background refresh does not fetch it again today (#2595).
 		// A failure is only logged, the stamp is an optimisation.
 		if err := h.authors.StampMetadataRefresh(ctx, author.ID, now); err != nil {
 			slog.Warn("author profile refresh: could not record freshness", "author", author.Name, "error", err)

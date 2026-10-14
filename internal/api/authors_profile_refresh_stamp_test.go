@@ -21,7 +21,7 @@ func (p *profileErrProvider) GetAuthor(_ context.Context, _ string) (*models.Aut
 
 // An explicit refresh stamps author freshness (#2595), including when the
 // provider has nothing new: the profile was still checked, so the staggered
-// nightly job must not fetch it again within the day.
+// background job must not fetch it again within the day.
 func TestRefreshAuthorProfile_StampsFreshnessEvenWhenUnchanged(t *testing.T) {
 	provider := &stubMetaProvider{author: &models.Author{ForeignID: "OL39307A", Name: "H. G. Wells", Description: "Same bio."}}
 	f := newCoreFixture(t, provider)
@@ -45,7 +45,7 @@ func TestRefreshAuthorProfile_StampsFreshnessEvenWhenUnchanged(t *testing.T) {
 	}
 }
 
-// A failed explicit refresh leaves the author stale so the nightly job still
+// A failed explicit refresh leaves the author stale so the staggered background job still
 // picks it up.
 func TestRefreshAuthorProfile_FailureDoesNotStamp(t *testing.T) {
 	provider := &profileErrProvider{err: errors.Join(errors.New("boom"), metadata.ErrUnavailable)}

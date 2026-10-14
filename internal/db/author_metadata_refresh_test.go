@@ -46,7 +46,7 @@ func TestListMetadataRefreshDue_FiltersAndOrder(t *testing.T) {
 		}
 	}
 
-	got, err := repo.ListMetadataRefreshDue(ctx, cutoff, 10)
+	got, err := repo.ListMetadataRefreshDue(ctx, now, cutoff, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestListMetadataRefreshDue_FiltersAndOrder(t *testing.T) {
 		}
 	}
 
-	limited, err := repo.ListMetadataRefreshDue(ctx, cutoff, 3)
+	limited, err := repo.ListMetadataRefreshDue(ctx, now, cutoff, 3)
 	if err != nil {
 		t.Fatal(err)
 	}

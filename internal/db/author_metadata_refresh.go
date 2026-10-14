@@ -13,8 +13,8 @@ import (
 
 // Staggered author profile refresh (#2595).
 //
-// The nightly profile refresh used to walk every author in one burst and never
-// read authors.last_metadata_refresh_at. These queries give it a persisted
+// The profile refresh used to run nightly, walk every author in one burst and
+// never read authors.last_metadata_refresh_at. These queries give it a persisted
 // cursor on that column: the scheduler asks for the stalest authors, refreshes
 // a bounded few, and stamps each one only after its refresh succeeded.
 
@@ -36,11 +36,11 @@ const metadataRefreshEligibleWhere = `monitored = 1 AND foreign_id NOT LIKE 'cal
 // row Update, the ABS import, older builds), so the comparison and the
 // ordering are done on parsed times, not on text. The eligible set read is
 // one small row per author.
-func (r *AuthorRepo) ListMetadataRefreshDue(ctx context.Context, cutoff time.Time, limit int) ([]models.Author, error) {
+func (r *AuthorRepo) ListMetadataRefreshDue(ctx context.Context, now, cutoff time.Time, limit int) ([]models.Author, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	due, err := r.metadataRefreshCandidates(ctx, cutoff)
+	due, err := r.metadataRefreshCandidates(ctx, now, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +80,8 @@ type metadataRefreshCandidate struct {
 }
 
 // metadataRefreshCandidates reads the eligible authors whose refresh stamp is
-// missing or older than cutoff, unordered.
-func (r *AuthorRepo) metadataRefreshCandidates(ctx context.Context, cutoff time.Time) ([]metadataRefreshCandidate, error) {
+// missing, in the future of now, or older than cutoff, unordered.
+func (r *AuthorRepo) metadataRefreshCandidates(ctx context.Context, now, cutoff time.Time) ([]metadataRefreshCandidate, error) {
 	rows, err := r.db.QueryContext(ctx,
 		"SELECT id, last_metadata_refresh_at FROM authors WHERE "+metadataRefreshEligibleWhere)
 	if err != nil {
@@ -101,6 +101,12 @@ func (r *AuthorRepo) metadataRefreshCandidates(ctx context.Context, cutoff time.
 		if perr != nil {
 			// An unreadable stamp must not exempt an author from refresh.
 			slog.Warn("unparseable author.last_metadata_refresh_at, treating as never refreshed", "author_id", id, "value", raw.String, "error", perr)
+			last = nil
+		}
+		if last != nil && last.After(now) {
+			// A stamp from the future (clock moved back, restored backup)
+			// would hide the author until the clock catches up. Treat it as
+			// never refreshed.
 			last = nil
 		}
 		if last == nil || last.Before(cutoff) {

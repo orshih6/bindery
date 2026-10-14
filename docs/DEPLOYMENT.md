@@ -797,7 +797,7 @@ For authors whose primary provider is Hardcover, the steady daily cost is one
 request per author:
 
 | Authors on Hardcover | Per tick | Requests per day | Free (5,000 per day) | Supporter (50,000 per day) |
-|---|---|---|---|---|
+|-|-|-|-|-|
 | 250 | 11 | 250 | 5% | 0.5% |
 | 1,000 | 42 | 1,000 | 20% | 2% |
 | 2,400 | 100 | 2,400 | 48% | 4.8% |

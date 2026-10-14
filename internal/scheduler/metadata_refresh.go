@@ -55,10 +55,13 @@ const (
 	metadataRefreshFailureBreaker = 3
 
 	// metadataRefreshAuthorCooldown is how long an author whose refresh failed
-	// for its own reasons (not found, a record that does not parse, no
-	// provider for its id) is passed over. It is not stamped, so without this
-	// it would head every tick's queue and, with a batch of one, starve every
-	// author behind it. Kept in memory: a restart retries it at once.
+	// is passed over, when the failure is the author's and not the whole
+	// provider's: not found, a record that does not parse, no provider for its
+	// id, or a server error or timeout followed by an author that did answer.
+	// It is not stamped, so without this it would head every tick's queue,
+	// retried 24 times a day, and with a batch of one starve every author
+	// behind it. A rate limit, a held quota or a tripped breaker leave the
+	// authors uncooled. Kept in memory: a restart retries it at once.
 	metadataRefreshAuthorCooldown = 6 * time.Hour
 )
 
@@ -123,13 +126,27 @@ func (s *Scheduler) refreshMetadata() {
 	}
 	batch := metadataRefreshBatchSize(eligible)
 	cooling := s.coolingAuthors(start)
-	due, err := s.authors.ListMetadataRefreshDue(ctx, start.Add(-metadataRefreshInterval), batch+metadataRefreshSpareAuthors+len(cooling))
+	due, err := s.authors.ListMetadataRefreshDue(ctx, start, start.Add(-metadataRefreshInterval), batch+metadataRefreshSpareAuthors+len(cooling))
 	if err != nil {
 		slog.Error("failed to list authors due for metadata refresh", "error", err)
 		return
 	}
 
-	attempted, refreshed, streak := 0, 0, 0
+	attempted, refreshed := 0, 0
+	// pending holds the current streak of authors that failed with the
+	// provider unavailable. They are not yet known to be at fault: a success
+	// or an author specific error after them says the provider is fine and
+	// they are the problem, so they are cooled like any author that fails for
+	// its own reasons. A tripped breaker or a rate limit says the provider as
+	// a whole is down, and they are left alone so they head the next tick.
+	var pending []int64
+	flushPending := func() {
+		now := time.Now()
+		for _, id := range pending {
+			s.coolAuthor(id, now)
+		}
+		pending = nil
+	}
 	stopped := ""
 loop:
 	for _, listed := range due {
@@ -177,23 +194,24 @@ loop:
 			stopped = "rate limited"
 			break loop
 		case err != nil && metadata.IsProviderUnavailable(err):
-			streak++
+			pending = append(pending, author.ID)
 			slog.Warn("failed to refresh author, the provider looks unavailable", "author", author.Name, "error", err)
-			if streak >= metadataRefreshFailureBreaker {
+			if len(pending) >= metadataRefreshFailureBreaker {
 				slog.Warn("metadata refresh stopped after consecutive provider failures; those authors retry next tick",
-					"failures", streak)
+					"failures", len(pending))
+				pending = nil
 				stopped = "breaker"
 				break loop
 			}
 			continue
 		case err != nil:
 			// About this author, not the provider.
-			streak = 0
+			flushPending()
 			slog.Warn("failed to refresh author", "author", author.Name, "error", err)
 			s.coolAuthor(author.ID, time.Now())
 			continue
 		}
-		streak = 0
+		flushPending()
 		// Aggregator returns (nil, nil) when no configured provider owns this
 		// foreignID prefix (e.g. a Hardcover-prefixed author after Hardcover
 		// was disabled, or any author whose ForeignID prefix no longer maps to
@@ -210,6 +228,15 @@ loop:
 			refreshed++
 			slog.Debug("refreshed author", "author", author.Name)
 		}
+	}
+
+	// The pass ended with a streak shorter than the breaker and no success
+	// after it (a short batch): those authors, not the provider, are the
+	// likeliest cause, and leaving them uncooled would send the same ones to
+	// the head of every tick. A rate limit or a tripped breaker cleared the
+	// streak already; a shutdown writes nothing.
+	if stopped == "" && ctx.Err() == nil {
+		flushPending()
 	}
 
 	slog.Info("job: author profile refresh pass finished",
