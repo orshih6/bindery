@@ -9,18 +9,21 @@ interface Props {
   clientType: string
   remotePath: string
   candidates: RemapCandidate[]
+  // Why there is nothing to pick, when the server says so.
+  note?: 'samePath' | 'unsupportedChars'
   // Saves the new remap through the normal update route and re-runs Test. The
   // assistant never applies anything from the diagnostic response itself.
   onApply: (local: string) => Promise<void>
 }
 
-export default function RemapAssistant({ clientId, clientType, remotePath, candidates, onApply }: Props) {
+export default function RemapAssistant({ clientId, clientType, remotePath, candidates, note, onApply }: Props) {
   const { t } = useTranslation()
   const [selected, setSelected] = useState(candidates[0]?.path ?? '')
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (!supportsRemapAssistant(clientType) || !remotePath || candidates.length === 0) return null
+  if (!supportsRemapAssistant(clientType) || !remotePath) return null
+  if (candidates.length === 0 && !note) return null
 
   const current = candidates.find(c => c.path === selected) ?? candidates[0]
   const selectId = `remap-assist-${clientId}`
@@ -43,11 +46,13 @@ export default function RemapAssistant({ clientId, clientType, remotePath, candi
       className="mt-1 p-3 border border-slate-200 dark:border-zinc-800 rounded-lg bg-slate-50 dark:bg-zinc-900/60 text-xs space-y-2"
     >
       <h5 className="font-semibold text-sm">{t('settings.clients.remapAssist.heading')}</h5>
-      <p className="text-slate-600 dark:text-zinc-400">{t('settings.clients.remapAssist.intro')}</p>
+      {current && <p className="text-slate-600 dark:text-zinc-400">{t('settings.clients.remapAssist.intro')}</p>}
       <p>
         <span className="text-slate-600 dark:text-zinc-400">{t('settings.clients.remapAssist.clientPath')}: </span>
         <code className="font-mono break-all">{remotePath}</code>
       </p>
+      {!current && note && <p role="note">{t(`settings.clients.remapAssist.note.${note}`)}</p>}
+      {current && (<>
       <div>
         <label htmlFor={selectId} className={labelCls}>{t('settings.clients.remapAssist.chooseLabel')}</label>
         <select id={selectId} value={current.path} onChange={e => setSelected(e.target.value)} className={inputCls}>
@@ -73,6 +78,7 @@ export default function RemapAssistant({ clientId, clientType, remotePath, candi
       >
         {applying ? t('settings.clients.remapAssist.applying') : t('settings.clients.remapAssist.apply')}
       </button>
+      </>)}
     </section>
   )
 }

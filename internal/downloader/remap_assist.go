@@ -9,8 +9,11 @@ import (
 
 // Where a remap candidate came from, for the UI to label.
 const (
-	RemapSourceDownloadDir = "downloadDir"
-	RemapSourceLibrary     = "library"
+	RemapSourceEbookDir       = "ebookDownloadDir"
+	RemapSourceAudiobookDir   = "audiobookDownloadDir"
+	RemapNoteSamePath         = "samePath"
+	RemapNoteUnsupportedChars = "unsupportedChars"
+	RemapSourceLibrary        = "library"
 )
 
 // remapPreviewName is the stand in file name the before and after preview
@@ -54,16 +57,23 @@ func SupportsRemapAssistant(clientType string) bool {
 // through pathmap, the same parser the importer uses, so a Windows drive or
 // share on the client side previews exactly as it will resolve. Roots that are
 // empty or repeat an earlier one once cleaned are dropped. An unsupported type
-// or a blank remote path yields nil.
-func RemapCandidates(clientType, remotePath string, roots []RemapRoot) []RemapCandidate {
+// or a blank remote path yields nil. The second result is a note when nothing
+// is offered for a reason worth telling the user: RemapNoteSamePath when a
+// folder is identical on both sides (mount it, do not remap it), or
+// RemapNoteUnsupportedChars when a path holds a comma or a colon.
+func RemapCandidates(clientType, remotePath string, roots []RemapRoot) ([]RemapCandidate, string) {
 	remotePath = strings.TrimSpace(remotePath)
 	if !SupportsRemapAssistant(clientType) || remotePath == "" {
-		return nil
+		return nil, ""
 	}
 	remote := pathmap.CleanClientPath(remotePath)
+	if hasRemapSyntaxChar(remote) {
+		return nil, RemapNoteUnsupportedChars
+	}
 	before := pathmap.ClientPathJoin(remote, remapPreviewName)
 	var out []RemapCandidate
 	seen := map[string]bool{}
+	identity, skipped := false, false
 	for _, root := range roots {
 		if strings.TrimSpace(root.Path) == "" {
 			continue
@@ -73,11 +83,40 @@ func RemapCandidates(clientType, remotePath string, roots []RemapRoot) []RemapCa
 			continue
 		}
 		seen[local] = true
+		if hasRemapSyntaxChar(local) {
+			skipped = true
+			continue
+		}
 		after, matched := pathmap.Parse(remote + ":" + local).ApplyMatched(before)
 		if !matched {
 			continue
 		}
+		if after == before {
+			// The remap would change nothing: the client and Bindery already
+			// use the same path, so the folder needs mounting, not remapping.
+			identity = true
+			continue
+		}
 		out = append(out, RemapCandidate{Path: local, Source: root.Source, Before: before, After: after})
 	}
-	return out
+	if len(out) > 0 {
+		return out, ""
+	}
+	switch {
+	case identity:
+		return nil, RemapNoteSamePath
+	case skipped:
+		return nil, RemapNoteUnsupportedChars
+	}
+	return nil, ""
+}
+
+// hasRemapSyntaxChar reports whether p holds a character the comma separated
+// from:to syntax cannot carry. A Windows drive designator's own colon is part
+// of the path, not a separator.
+func hasRemapSyntaxChar(p string) bool {
+	if pathmap.IsWindowsPath(p) {
+		p = p[2:]
+	}
+	return strings.ContainsAny(p, ",:")
 }

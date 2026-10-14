@@ -26,6 +26,7 @@ type remapAssistResponse struct {
 		Before string `json:"before"`
 		After  string `json:"after"`
 	} `json:"remapCandidates"`
+	RemapNote string `json:"remapNote"`
 }
 
 func qbitStubForRemap(t *testing.T, savePath string) (string, int) {
@@ -84,12 +85,18 @@ func TestDownloadClientTest_RemapAssist(t *testing.T) {
 		if out.PathVisibility == nil || out.PathVisibility.Status != "warning" || out.PathVisibility.RemotePath != "/remote/downloads" {
 			t.Fatalf("pathVisibility = %+v", out.PathVisibility)
 		}
-		var paths []string
+		var paths, sources []string
 		for _, cand := range out.RemapCandidates {
 			paths = append(paths, cand.Path)
+			sources = append(sources, cand.Source)
 		}
 		if got := strings.Join(paths, ","); got != "/data/downloads,/data/audio,/books" {
 			t.Fatalf("candidates = %q", got)
+		}
+		// Ebook folder first, then the audiobook folder, then library roots,
+		// each labelled for what it is.
+		if got := strings.Join(sources, ","); got != "ebookDownloadDir,audiobookDownloadDir,library" {
+			t.Fatalf("sources = %q", got)
 		}
 		if strings.Contains(raw, "pathRemap") || strings.Contains(raw, "path_remap") {
 			t.Fatalf("response hands back a remap to replay: %s", raw)
@@ -101,6 +108,23 @@ func TestDownloadClientTest_RemapAssist(t *testing.T) {
 		}
 		if stored.PathRemap != "" {
 			t.Fatalf("Test wrote path_remap %q", stored.PathRemap)
+		}
+	})
+
+	t.Run("the same path on both sides says to mount it instead of offering a no-op remap", func(t *testing.T) {
+		host, port := qbitStubForRemap(t, "/downloads")
+		h, clients := downloadClientFixture(t)
+		h.WithStoragePaths("/downloads", "")
+		c := &models.DownloadClient{Name: "q", Type: "qbittorrent", Host: host, Port: port, Username: "u", Password: "p", Category: "books", Enabled: true}
+		if err := clients.Create(context.Background(), c); err != nil {
+			t.Fatal(err)
+		}
+		out, _ := runRemapAssistTest(t, h, c)
+		if out.PathVisibility == nil || out.PathVisibility.Status != "warning" {
+			t.Fatalf("pathVisibility = %+v", out.PathVisibility)
+		}
+		if len(out.RemapCandidates) != 0 || out.RemapNote != "samePath" {
+			t.Fatalf("candidates = %+v note = %q", out.RemapCandidates, out.RemapNote)
 		}
 	})
 

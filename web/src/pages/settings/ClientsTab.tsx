@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, DiagnoseResult, DownloadClient, DownloadClientUpdate, RemapCandidate } from '../../api/client'
 import { inputCls } from './formStyles'
@@ -32,7 +32,7 @@ export default function ClientsTab({ clients, setClients }: Props) {
   const { t } = useTranslation()
   const [showAddClient, setShowAddClient] = useState(false)
   const [editingClient, setEditingClient] = useState<number | null>(null)
-  const [clientTestResult, setClientTestResult] = useState<Record<number, { ok: boolean; msg: string; warn?: string; assist?: { remotePath: string; candidates: RemapCandidate[] } }>>({})
+  const [clientTestResult, setClientTestResult] = useState<Record<number, { ok: boolean; msg: string; warn?: string; assist?: { remotePath: string; candidates: RemapCandidate[]; note?: 'samePath' | 'unsupportedChars' } }>>({})
   const [confirmDeleteClient, setConfirmDeleteClient] = useState<number | null>(null)
   // Diagnose runs only for a saved client (it takes the id, never a form).
   const [diagnosing, setDiagnosing] = useState<number | null>(null)
@@ -61,8 +61,9 @@ export default function ClientsTab({ clients, setClients }: Props) {
         ? (result.pathVisibility.message || t('settings.clients.pathNotVisible'))
         : undefined
       const remotePath = result.pathVisibility?.remotePath
-      const assist = warn && remotePath && result.remapCandidates?.length
-        ? { remotePath, candidates: result.remapCandidates }
+      const candidates = result.remapCandidates ?? []
+      const assist = warn && remotePath && (candidates.length > 0 || result.remapNote)
+        ? { remotePath, candidates, note: result.remapNote }
         : undefined
       setClientTestResult(prev => ({ ...prev, [c.id]: { ok: true, msg: t('common.connOk'), warn, assist } }))
     } catch (err: unknown) {
@@ -72,15 +73,30 @@ export default function ClientsTab({ clients, setClients }: Props) {
     }
   }
 
-  // The assistant's save is the ordinary update call with the one field changed
-  // (the diagnostic response is never replayed), followed by a fresh Test.
+  // The assistant's save is the ordinary update call, followed by a fresh Test.
+  // It sends only pathRemap: the server merges onto the stored row, so no other
+  // field or credential is touched and a stale list cannot overwrite them. The
+  // new value is built from the list's copy of the remap, so a remap edited
+  // elsewhere since this page loaded would be replaced.
   const applyRemap = async (c: DownloadClient, remotePath: string, local: string) => {
-    const updated = await api.updateDownloadClient(c.id, { ...c, pathRemap: addRemapRule(c.pathRemap || '', remotePath, local) })
+    const updated = await api.updateDownloadClient(c.id, { pathRemap: addRemapRule(c.pathRemap || '', remotePath, local) })
     setClients(prev => prev.map(x => x.id === updated.id ? updated : x))
     await runTest(updated)
+    setRefocusTest(c.id)
   }
 
-  const closeDiagnosis =(id: number) => setDiagnosis(prev => {
+  // The panel unmounts when the re-test passes, taking the focused Apply button
+  // with it, so hand focus to the row's Test button.
+  const [refocusTest, setRefocusTest] = useState<number | null>(null)
+  useEffect(() => {
+    if (refocusTest === null) return
+    if (!clientTestResult[refocusTest]?.assist) {
+      document.getElementById(`client-test-${refocusTest}`)?.focus()
+    }
+    setRefocusTest(null)
+  }, [refocusTest, clientTestResult])
+
+  const closeDiagnosis = (id: number) => setDiagnosis(prev => {
     const next = { ...prev }
     delete next[id]
     return next
@@ -118,6 +134,7 @@ export default function ClientsTab({ clients, setClients }: Props) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <button onClick={() => setEditingClient(editingClient === c.id ? null : c.id)} className="text-xs text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white">{t('common.edit')}</button>
                   <button
+                    id={`client-test-${c.id}`}
                     onClick={() => { void runTest(c) }}
                     className="text-xs text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
                   >
@@ -191,6 +208,7 @@ export default function ClientsTab({ clients, setClients }: Props) {
                   clientType={c.type}
                   remotePath={clientTestResult[c.id].assist!.remotePath}
                   candidates={clientTestResult[c.id].assist!.candidates}
+                  note={clientTestResult[c.id].assist!.note}
                   onApply={local => applyRemap(c, clientTestResult[c.id].assist!.remotePath, local)}
                 />
               )}

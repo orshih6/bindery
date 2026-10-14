@@ -66,7 +66,7 @@ export interface PathVisibility {
 // with a sample path before and after. Read only: it carries no remap string.
 export interface RemapCandidate {
   path: string
-  source: 'downloadDir' | 'library'
+  source: 'ebookDownloadDir' | 'audiobookDownloadDir' | 'library'
   before: string
   after: string
 }
@@ -78,6 +78,11 @@ export interface DownloadClientTestResult {
   // Present only when pathVisibility is a warning on a client type that
   // reports a fixed completed folder (qBittorrent, NZBGet, rTorrent).
   remapCandidates?: RemapCandidate[]
+  // Why no candidate is offered, when that is worth telling the user:
+  // samePath means Bindery's folder equals the client's, so it needs mounting;
+  // unsupportedChars means a path holds a comma or colon the remap syntax
+  // cannot carry, so the rule must be written by hand.
+  remapNote?: 'samePath' | 'unsupportedChars'
 }
 
 // Diagnose (the download client path doctor) answers with an ordered

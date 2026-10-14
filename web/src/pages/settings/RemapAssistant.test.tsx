@@ -55,7 +55,7 @@ const warning = {
   message: 'Connected',
   pathVisibility: { status: 'warning' as const, message: 'cannot read it', path: '/downloads/books', remotePath: '/downloads/books' },
   remapCandidates: [
-    { path: '/data/downloads', source: 'downloadDir' as const, before: '/downloads/books/Example Book', after: '/data/downloads/Example Book' },
+    { path: '/data/downloads', source: 'ebookDownloadDir' as const, before: '/downloads/books/Example Book', after: '/data/downloads/Example Book' },
     { path: '/books', source: 'library' as const, before: '/downloads/books/Example Book', after: '/books/Example Book' },
   ],
 }
@@ -113,13 +113,58 @@ describe('path remap assistant', () => {
 
     await waitFor(() => expect(api.testDownloadClient).toHaveBeenCalledTimes(2))
     expect(api.updateDownloadClient).toHaveBeenCalledTimes(1)
-    expect(api.updateDownloadClient).toHaveBeenCalledWith(3, expect.objectContaining({ pathRemap: '/seed:/other,/downloads/books:/data/downloads' }))
+    // Only the field being changed goes over the wire: the server merges onto
+    // the stored row, so no other field (or credential) is touched.
+    expect(api.updateDownloadClient).toHaveBeenCalledWith(3, { pathRemap: '/seed:/other,/downloads/books:/data/downloads' })
     // The update happened before the second Test.
     const updateOrder = vi.mocked(api.updateDownloadClient).mock.invocationCallOrder[0]
     expect(updateOrder).toBeGreaterThan(vi.mocked(api.testDownloadClient).mock.invocationCallOrder[0])
     expect(updateOrder).toBeLessThan(vi.mocked(api.testDownloadClient).mock.invocationCallOrder[1])
     // Re-test came back visible, so the assistant is gone.
     await waitFor(() => expect(screen.queryByRole('region', { name: 'settings.clients.remapAssist.heading' })).toBeNull())
+    // The Apply button unmounted with focus, so focus lands on the row's Test button.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'common.test' })))
+  })
+
+  it('replaces a rule with the same source instead of appending behind it', async () => {
+    vi.mocked(api.testDownloadClient).mockResolvedValueOnce(warning)
+    vi.mocked(api.testDownloadClient).mockResolvedValueOnce({ message: 'ok' })
+    render(<Harness initial={[makeClient({ pathRemap: '/downloads/books:/wrong,/a:/b' })]} />)
+    await runTest()
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.clients.remapAssist.apply' }))
+    await waitFor(() => expect(api.updateDownloadClient).toHaveBeenCalledWith(3, { pathRemap: '/downloads/books:/data/downloads,/a:/b' }))
+  })
+
+  it('labels candidates by what they are', async () => {
+    vi.mocked(api.testDownloadClient).mockResolvedValue({
+      ...warning,
+      remapCandidates: [
+        { path: '/e', source: 'ebookDownloadDir', before: 'b', after: 'a' },
+        { path: '/a', source: 'audiobookDownloadDir', before: 'b', after: 'a' },
+        { path: '/l', source: 'library', before: 'b', after: 'a' },
+      ],
+    })
+    render(<Harness initial={[makeClient()]} />)
+    await runTest()
+    const options = (await screen.findAllByRole('option')).map(o => o.textContent)
+    expect(options).toEqual([
+      '/e (settings.clients.remapAssist.source.ebookDownloadDir)',
+      '/a (settings.clients.remapAssist.source.audiobookDownloadDir)',
+      '/l (settings.clients.remapAssist.source.library)',
+    ])
+  })
+
+  it.each([
+    ['samePath', 'settings.clients.remapAssist.note.samePath'],
+    ['unsupportedChars', 'settings.clients.remapAssist.note.unsupportedChars'],
+  ] as const)('explains a %s note and offers no Apply', async (remapNote, text) => {
+    vi.mocked(api.testDownloadClient).mockResolvedValue({ message: 'ok', pathVisibility: warning.pathVisibility, remapNote })
+    render(<Harness initial={[makeClient()]} />)
+    await runTest()
+
+    expect(await screen.findByText(text)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'settings.clients.remapAssist.apply' })).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 
   it('shows the error and does not re-test when the save fails', async () => {
@@ -139,6 +184,26 @@ describe('addRemapRule', () => {
     expect(addRemapRule('', '/downloads', '/data')).toBe('/downloads:/data')
     expect(addRemapRule('/a:/b', '/downloads', '/data')).toBe('/a:/b,/downloads:/data')
     expect(addRemapRule('/downloads:/data', '/downloads', '/data')).toBe('/downloads:/data')
+  })
+
+  it('replaces a rule whose source matches, never appending behind it (the first equal prefix wins in pathmap)', () => {
+    expect(addRemapRule('/data/dl:/wrong', '/data/dl', '/right')).toBe('/data/dl:/right')
+    expect(addRemapRule('/x:/y,/data/dl:/wrong,/z:/w', '/data/dl', '/right')).toBe('/x:/y,/data/dl:/right,/z:/w')
+    expect(addRemapRule('/data/dl/:/wrong', '/data/dl', '/right')).toBe('/data/dl:/right')
+    // POSIX sources are case sensitive: a different case is a different rule.
+    expect(addRemapRule('/Data/dl:/keep', '/data/dl', '/right')).toBe('/Data/dl:/keep,/data/dl:/right')
+  })
+
+  it('collides Windows variants of the same source', () => {
+    expect(addRemapRule('S:\\Downloads:/wrong', 's:/downloads', '/right')).toBe('s:/downloads:/right')
+    expect(addRemapRule('s:/downloads/:/wrong', 'S:\\Downloads', '/right')).toBe('S:\\Downloads:/right')
+    expect(addRemapRule('\\\\NAS\\Books:/wrong', '//nas/books', '/right')).toBe('//nas/books:/right')
+    expect(addRemapRule('S:\\Downloads:/wrong,/a:/b', 'S:/downloads', '/right')).toBe('S:/downloads:/right,/a:/b')
+    expect(addRemapRule('T:\\Downloads:/other', 'S:/downloads', '/right')).toBe('T:\\Downloads:/other,S:/downloads:/right')
+  })
+
+  it('removes further rules with the same source while replacing', () => {
+    expect(addRemapRule('/d:/1,/d:/2', '/d', '/3')).toBe('/d:/3')
   })
 
   it('keeps Windows drive and share paths intact on the client side', () => {

@@ -48,14 +48,45 @@ export function supportsRemapAssistant(type: string): boolean {
   return REMAP_ASSISTED_TYPES.includes(type)
 }
 
-// addRemapRule appends remote:local to an existing remap, keeping the rules the
-// client already has (the longest prefix wins, so order does not matter) and
-// not repeating one that is already there.
+// remapSourceKey is the comparison form of a rule's source, as internal/pathmap
+// folds it: a Windows side (drive letter or network share) ignores case and
+// treats `\` and `/` alike, a POSIX side is compared verbatim, and trailing
+// separators never count.
+function remapSourceKey(source: string): string {
+  const s = source.trim()
+  const windows = /^[A-Za-z]:[\\/]/.test(s) || s.startsWith('\\\\') || /^\/\/[^\\/]+[\\/][^\\/]/.test(s)
+  if (!windows) return s.replace(/\/+$/, '')
+  return s.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
+}
+
+// remapRuleSource returns the source half of a from:to rule, split at the first
+// colon that is not a Windows drive designator, the way pathmap splits it.
+function remapRuleSource(rule: string): string {
+  const start = /^[A-Za-z]:[\\/]/.test(rule) ? 2 : 0
+  const colon = rule.indexOf(':', start)
+  return colon < 0 ? rule : rule.slice(0, colon)
+}
+
+// addRemapRule puts remote:local into an existing remap. A rule that already has
+// the same source (compared the way pathmap does) is replaced in place, and any
+// further duplicates of it dropped, because when two rules have equal length
+// sources pathmap uses the first one, so appending behind a bad rule would
+// leave the bad rule in force. Other rules are kept as they are.
 export function addRemapRule(existing: string, remote: string, local: string): string {
   const rule = `${remote}:${local}`
-  const rules = existing.split(',').map(r => r.trim()).filter(Boolean)
-  if (!rules.includes(rule)) rules.push(rule)
-  return rules.join(',')
+  const key = remapSourceKey(remote)
+  const out: string[] = []
+  let placed = false
+  for (const r of existing.split(',').map(x => x.trim()).filter(Boolean)) {
+    if (remapSourceKey(remapRuleSource(r)) !== key) {
+      out.push(r)
+    } else if (!placed) {
+      out.push(rule)
+      placed = true
+    }
+  }
+  if (!placed) out.push(rule)
+  return out.join(',')
 }
 
 // downloadClientPathRemapHelp returns the help text for the path-remap field

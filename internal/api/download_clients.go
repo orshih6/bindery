@@ -476,12 +476,15 @@ func (h *DownloadClientHandler) Test(w http.ResponseWriter, r *http.Request) {
 		Health          *models.DownloadClientHealth `json:"health,omitempty"`
 		PathVisibility  *downloader.PathVisibility   `json:"pathVisibility,omitempty"`
 		RemapCandidates []downloader.RemapCandidate  `json:"remapCandidates,omitempty"`
+		// RemapNote says why no candidate is offered when that is worth
+		// telling the user: "samePath" or "unsupportedChars".
+		RemapNote string `json:"remapNote,omitempty"`
 	}{
-		Message:         "Connection verified",
-		Health:          health,
-		PathVisibility:  pathVisibilityForResponse(pathVis),
-		RemapCandidates: h.remapCandidates(r.Context(), client, pathVis),
+		Message:        "Connection verified",
+		Health:         health,
+		PathVisibility: pathVisibilityForResponse(pathVis),
 	}
+	resp.RemapCandidates, resp.RemapNote = h.remapCandidates(r.Context(), client, pathVis)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -493,13 +496,16 @@ func (h *DownloadClientHandler) Test(w http.ResponseWriter, r *http.Request) {
 // Read only by construction: it returns folders and a previewed join, never a
 // remap string, and writes nothing. The UI saves a remap through the normal
 // update route.
-func (h *DownloadClientHandler) remapCandidates(ctx context.Context, client *models.DownloadClient, vis downloader.PathVisibility) []downloader.RemapCandidate {
+func (h *DownloadClientHandler) remapCandidates(ctx context.Context, client *models.DownloadClient, vis downloader.PathVisibility) ([]downloader.RemapCandidate, string) {
 	if vis.Status != downloader.PathNotVisible || vis.RemotePath == "" {
-		return nil
+		return nil, ""
 	}
+	// The folder the client is expected to write to comes first, then the
+	// other download folder, then the library roots. Existence is not checked
+	// here: the Test the UI re-runs after Apply is that check.
 	roots := []downloader.RemapRoot{
-		{Path: h.downloadDir, Source: downloader.RemapSourceDownloadDir},
-		{Path: h.audiobookDownloadDir, Source: downloader.RemapSourceDownloadDir},
+		{Path: downloader.ExpectedDownloadDirForClient(client, models.MediaTypeEbook, h.downloadDir, h.audiobookDownloadDir), Source: downloader.RemapSourceEbookDir},
+		{Path: downloader.ExpectedDownloadDirForClient(client, models.MediaTypeAudiobook, h.downloadDir, h.audiobookDownloadDir), Source: downloader.RemapSourceAudiobookDir},
 	}
 	for _, p := range h.roots.Configured(ctx) {
 		roots = append(roots, downloader.RemapRoot{Path: p, Source: downloader.RemapSourceLibrary})
