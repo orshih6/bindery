@@ -1742,6 +1742,11 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 	// Whether the grab named a book. Only such a download is content checked
 	// (#3015, #3246): one matched from its own metadata just below agrees with
 	// that book by construction.
+	//
+	// Known limit: the recovery below saves its match with SetBookID, and the
+	// downloads row has no field saying the book was a guess, so on a Retry
+	// import of such a download this is true and the saved book is checked as
+	// if the grab had named it. Telling the two apart needs a column.
 	grabbedForBook := dl.BookID != nil
 
 	// Recover an association for downloads grabbed without a BookID (the
