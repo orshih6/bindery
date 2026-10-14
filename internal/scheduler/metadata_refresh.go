@@ -90,6 +90,11 @@ func metadataRefreshBatchSize(eligible int) int {
 func (s *Scheduler) coolingAuthors(now time.Time) map[int64]bool {
 	s.metadataCooldownMu.Lock()
 	defer s.metadataCooldownMu.Unlock()
+	for id, t := range s.metadataBreakerTrips {
+		if now.Sub(t.at) > breakerTripMemory {
+			delete(s.metadataBreakerTrips, id)
+		}
+	}
 	out := make(map[int64]bool, len(s.metadataCooldown))
 	for id, until := range s.metadataCooldown {
 		if now.Before(until) {
@@ -108,6 +113,74 @@ func (s *Scheduler) coolAuthor(id int64, now time.Time) {
 		s.metadataCooldown = make(map[int64]time.Time)
 	}
 	s.metadataCooldown[id] = now.Add(metadataRefreshAuthorCooldown)
+}
+
+// metadataRefreshBreakerTripsToCool is how many tripped passes in a row an
+// author may be part of before it is cooled like any author that keeps failing.
+//
+// A pass that trips the breaker cannot tell a provider outage from three
+// authors the provider cannot answer for (a record it 500s on, a profile so
+// large it times out): both look like three failures in a row. The first
+// pass leaves them uncooled, so a real outage costs nothing. But if the same
+// authors are the three stalest on every tick and trip it every time, they
+// starve everyone behind them. Counting trips per author tells the two apart
+// over time: an outage ends and the count is cleared by the first success,
+// a bad record trips again and again.
+//
+// The threshold is 3, which at an hourly tick means an outage has to outlast
+// two full ticks and still be going on the third before anyone is cooled.
+// Two would cool after one hour of a continuing outage, and the authors it
+// cools are the stalest, the ones a recovered provider should reach first.
+// The price of 3 is that a persistently failing triple costs three wasted
+// ticks (12 slots at a batch of 4) before the library moves again, once per
+// cooldown of 6 hours. The worst case for an outage lasting many hours is
+// bounded too: only the authors of a tripped pass are counted, so it cools at
+// most 3 authors every 3 ticks, each for 6 hours, never the whole library.
+const metadataRefreshBreakerTripsToCool = 3
+
+// breakerTripMemory is how long a trip count is kept without a new trip, so
+// the map is pruned with the cooldown map and cannot grow without bound.
+const breakerTripMemory = 24 * time.Hour
+
+type breakerTrip struct {
+	n  int
+	at time.Time
+}
+
+// noteBreakerTrip records that id was part of a pass that tripped the breaker
+// and cools it once that has happened metadataRefreshBreakerTripsToCool times
+// in a row, restarting its count.
+func (s *Scheduler) noteBreakerTrip(id int64, now time.Time) {
+	s.metadataCooldownMu.Lock()
+	defer s.metadataCooldownMu.Unlock()
+	if s.metadataBreakerTrips == nil {
+		s.metadataBreakerTrips = make(map[int64]breakerTrip)
+	}
+	t := s.metadataBreakerTrips[id]
+	t.n++
+	t.at = now
+	if t.n >= metadataRefreshBreakerTripsToCool {
+		delete(s.metadataBreakerTrips, id)
+		if s.metadataCooldown == nil {
+			s.metadataCooldown = make(map[int64]time.Time)
+		}
+		s.metadataCooldown[id] = now.Add(metadataRefreshAuthorCooldown)
+		return
+	}
+	s.metadataBreakerTrips[id] = t
+}
+
+// clearBreakerTrips forgets id's trips: the provider answered for it.
+func (s *Scheduler) clearBreakerTrips(id int64) {
+	s.metadataCooldownMu.Lock()
+	defer s.metadataCooldownMu.Unlock()
+	delete(s.metadataBreakerTrips, id)
+}
+
+func (s *Scheduler) breakerTripCount(id int64) int {
+	s.metadataCooldownMu.Lock()
+	defer s.metadataCooldownMu.Unlock()
+	return s.metadataBreakerTrips[id].n
 }
 
 // refreshMetadata runs one tick of the author profile refresh: the batch of
@@ -199,6 +272,9 @@ loop:
 			if len(pending) >= metadataRefreshFailureBreaker {
 				slog.Warn("metadata refresh stopped after consecutive provider failures; those authors retry next tick",
 					"failures", len(pending))
+				for _, id := range pending {
+					s.noteBreakerTrip(id, time.Now())
+				}
 				pending = nil
 				stopped = "breaker"
 				break loop
@@ -207,11 +283,13 @@ loop:
 		case err != nil:
 			// About this author, not the provider.
 			flushPending()
+			s.clearBreakerTrips(author.ID)
 			slog.Warn("failed to refresh author", "author", author.Name, "error", err)
 			s.coolAuthor(author.ID, time.Now())
 			continue
 		}
 		flushPending()
+		s.clearBreakerTrips(author.ID)
 		// Aggregator returns (nil, nil) when no configured provider owns this
 		// foreignID prefix (e.g. a Hardcover-prefixed author after Hardcover
 		// was disabled, or any author whose ForeignID prefix no longer maps to

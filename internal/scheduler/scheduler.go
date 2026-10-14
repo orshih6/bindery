@@ -248,6 +248,9 @@ type Scheduler struct {
 	// own reasons, until when they are passed over (#2595). In memory only.
 	metadataCooldownMu sync.Mutex
 	metadataCooldown   map[int64]time.Time
+	// metadataBreakerTrips counts, per author, the tripped passes in a row it
+	// was part of; see metadataRefreshBreakerTripsToCool.
+	metadataBreakerTrips map[int64]breakerTrip
 }
 
 const scheduledWantedSearchConcurrency = 2
