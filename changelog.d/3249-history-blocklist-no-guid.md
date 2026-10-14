@@ -1,2 +1,0 @@
-### Fixed
-- **Blocklist on a history event with no release GUID** (#3249). Blocklisting an event that carries no release GUID, such as a book import or an old grab, used to store an entry keyed on the title that could never match a real release, so the release could still be grabbed. It now answers that there is nothing to blocklist and stores nothing, and the History page keeps the row and shows that message instead of removing it. Reported by foobarbigtime.
