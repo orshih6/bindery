@@ -398,6 +398,29 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
               </label>
             </div>
           )}
+          <div className="border-t border-slate-200 dark:border-zinc-800 pt-3">
+            <label htmlFor="import-ebook-content-check" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1">
+              {t('settings.general.ebookContentCheck')}
+            </label>
+            <p className="text-xs text-slate-600 dark:text-zinc-500 mb-2">
+              {t('settings.general.ebookContentCheckHint')}
+            </p>
+            <select
+              id="import-ebook-content-check"
+              data-testid="import-ebook-content-check"
+              value={settings['import.ebook.content_check'] || 'warn'}
+              onChange={async e => {
+                const v = e.target.value
+                setSettings(s => ({ ...s, 'import.ebook.content_check': v }))
+                await api.setSetting('import.ebook.content_check', v).catch(console.error)
+              }}
+              className={inputCls}
+            >
+              <option value="off">{t('settings.general.contentCheckOff')}</option>
+              <option value="warn">{t('settings.general.contentCheckWarn')}</option>
+              <option value="block">{t('settings.general.contentCheckBlock')}</option>
+            </select>
+          </div>
           {anyExternal && (
             <div className="border-t border-slate-200 dark:border-zinc-800 pt-3 space-y-3">
               {importMode === 'external' && (

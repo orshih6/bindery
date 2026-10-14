@@ -508,7 +508,42 @@ profile does not allow it. Only downloads are checked: a library scan,
 adopting files already in your library, and books imported before this check
 existed are left alone. With the import mode set to **External**, Bindery
 hands the download to your other tool without opening its files, so nothing
-is checked there either. Audiobooks are not checked yet.
+is checked there either. Audiobooks are not checked for language.
+
+**The file's own title and author are checked at import (ebooks).** The release
+name can say one book while the EPUB inside is another, and without a check that
+file imports under the wrong book and the book is never searched for again. When
+a download tied to a wanted book finishes, Bindery reads the EPUB's `dc:title`
+and `dc:creator` and compares them with the book. Only a definite mismatch
+counts: the title is not the book's title (with its series suffix, such as
+`, Book 11`, and its subtitle removed, or the full title, or contained in it as
+whole words) **and** the author is not the book's author or one of its known
+aliases. A pen name or house name works through the alias list, so "Franklin W.
+Dixon" counts as Leslie McFarlane once that alias is on the author. A file with
+no title or no author never counts as a mismatch, a file whose title differs but
+whose author agrees (another book in the series) is imported, and a wanted box
+set or omnibus is not compared. If a release holds several EPUBs, it is flagged
+only when every one that could be read is a definite mismatch.
+
+What happens next is set by **Check ebook contents** under Settings, General,
+File Naming (`import.ebook.content_check`, admin only):
+
+- **Warn** (the default): the file imports as before, and the History row and the
+  `bookImported` webhook carry a `contentCheck` object with the file's title and
+  author and the book they were compared with. The History row shows it under
+  the title.
+- **Block**: the release is refused the way a wrong language is. Nothing is
+  placed, the Queue row is blocked with a message naming what the file says and
+  what was wanted, the release is added to the Blocklist and the book stays
+  Wanted. **Match to book** on the Queue row, or **Import, From a folder**, keeps
+  the file anyway and skips the check; **Retry import** runs it again.
+- **Off**: the check does not run and no file is opened for it.
+
+Block is opt in because a wrongly refused download costs more than a missed
+mismatch. The check only runs for downloads Bindery grabbed for a book. A library
+scan, manual import, **Match to book** and a download matched to its book from
+the file's own metadata are never checked, and only EPUB is read. Bindery does not
+read the book's text and does not write anything into the file.
 
 If the library app downstream reads sidecar metadata, turn on **Write a
 metadata.opf sidecar** in Settings → General (off by default). Bindery then

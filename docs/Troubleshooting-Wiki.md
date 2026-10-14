@@ -12,10 +12,32 @@ Title-only releases, connecting words, file-format labels and narrator credits
 remain supported. Unrecognised trailing text can be conservatively rejected;
 inspect the release's title and author rather than relying only on shared words.
 
-These checks use the release name. They do not verify the contents of a download
-or repair an existing incorrect import. If a previously imported file is another
+These checks use the release name. They do not open the download. A separate
+check does, once the download has finished: Bindery compares an EPUB's own title
+and author with the book it was grabbed for. It is set under Settings, General,
+File Naming (`import.ebook.content_check`), defaults to
+`warn`, which imports the file and records what it found on the History row and
+in webhooks as `contentCheck`, and only refuses a download in `block` mode. See
+[the User Guide](User-Guide-Wiki.md) for what counts as a mismatch. Nothing
+repairs an existing incorrect import. If a previously imported file is another
 book, use **Fix match** to assign it to the correct book before requesting a
 replacement for the original.
+
+### An import was blocked because the file looks like a different book
+
+The message names what the file says and what the book is, for example `the
+file says it is "Mary and Mr Eliot: A Sort of Love Story" by Mary Trevelyan, but
+the book is "Mary, Mary: Alex Cross, Book 11" by James Patterson`. The release is
+already on the Blocklist and the book is still Wanted, so the next search picks
+another release.
+
+- **The file really is the book** (a mislabelled or foreign language edition, a
+  file whose metadata is wrong): use **Match to book** on the Queue row. That
+  keeps the file and skips the check.
+- **The author is a pen name**: add it as an alias on the author, and **Retry
+  import** will accept the file.
+- **You would rather be warned than blocked**: set the check to `warn`. The
+  import goes ahead and the History row shows what was found.
 
 ## Bindery will not start after upgrading: "foreign_key_check found N violation(s)"
 

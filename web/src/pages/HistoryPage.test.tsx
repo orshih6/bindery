@@ -27,6 +27,8 @@ vi.mock('react-i18next', () => ({
         'history.events.downloadFailed': 'Download Failed',
         'history.events.importFailed': 'Import Failed',
         'history.title': 'History',
+        'history.contentCheckEbook': 'The file looks like another book',
+        'history.contentCheckAudiobook': 'The files include other books',
         'history.allEventTypes': 'All event types',
         'history.empty': 'No history events found',
         'history.emptyHint': 'Grabs, imports and failures land here as they happen.',
@@ -358,5 +360,47 @@ describe('HistoryPage', () => {
     // path it has always shown.
     const legacyRow = rowFor('Legacy Release')
     expect(within(legacyRow).getByText('/library/Author/Legacy.epub')).toBeInTheDocument()
+  })
+
+  it('says what a warn mode content check found on an ebook import (#3015)', async () => {
+    vi.mocked(api.listHistory).mockResolvedValue({
+      items: [
+        makeHistory({
+          id: 1,
+          eventType: 'bookImported',
+          sourceTitle: 'Mary Mary Release',
+          data: JSON.stringify({
+            path: '/library/James Patterson/Mary, Mary.epub',
+            format: 'ebook',
+            contentCheck: {
+              kind: 'ebook',
+              bookTitle: 'Mary, Mary',
+              bookAuthor: 'James Patterson',
+              mismatches: [{ file: 'a.epub', title: 'Mary and Mr Eliot', author: 'Mary Trevelyan' }],
+            },
+          }),
+        }),
+        makeHistory({
+          id: 2,
+          eventType: 'bookImported',
+          sourceTitle: 'Clean Release',
+          data: JSON.stringify({ path: '/library/Author/Clean.epub', format: 'ebook' }),
+        }),
+      ],
+      total: 2,
+      limit: 100,
+      offset: 0,
+    })
+
+    renderHistoryPage()
+    const table = await findDesktopTable()
+    expect(await within(table).findByText('Mary Mary Release')).toBeInTheDocument()
+    expect(
+      within(rowFor('Mary Mary Release')).getByText(
+        'The file looks like another book: "Mary and Mr Eliot" by Mary Trevelyan · /library/James Patterson/Mary, Mary.epub',
+      ),
+    ).toBeInTheDocument()
+    // An import nobody flagged reads exactly as before.
+    expect(within(rowFor('Clean Release')).getByText('/library/Author/Clean.epub')).toBeInTheDocument()
   })
 })

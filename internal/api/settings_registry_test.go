@@ -316,6 +316,13 @@ func TestValidateSettingValue_KnownKeysUnchanged(t *testing.T) {
 		{"pair gating timeout rejects zero", SettingImportDropPairGatingTimeoutHours, "0", true},
 		{"pair gating timeout rejects text", SettingImportDropPairGatingTimeoutHours, "soon", true},
 
+		{"ebook content check accepts off", SettingImportEbookContentCheck, "off", false},
+		{"ebook content check accepts warn", SettingImportEbookContentCheck, "warn", false},
+		{"ebook content check accepts block", SettingImportEbookContentCheck, "block", false},
+		{"ebook content check accepts empty (default warn)", SettingImportEbookContentCheck, "", false},
+		{"ebook content check rejects a typo", SettingImportEbookContentCheck, "blok", true},
+		{"ebook content check rejects skip, which is not offered", SettingImportEbookContentCheck, "skip", true},
+
 		{"import mode accepts external", SettingImportMode, "external", false},
 		{"import mode accepts empty", SettingImportMode, "", false},
 		{"import mode rejects symlink", SettingImportMode, "symlink", true},
@@ -475,6 +482,7 @@ var webSettingKeys = []string{
 	"import.drop_folder",
 	"import.drop_layout",
 	"import.drop_link_mode",
+	"import.ebook.content_check",
 	"import.mode",
 	"import.write_opf_sidecar",
 	"library.defaultAudiobookRootFolderId",

@@ -147,6 +147,39 @@ describe('GeneralTab external import mode', () => {
   })
 })
 
+describe('GeneralTab content check', () => {
+  it('defaults the ebook content check to warn and saves a change', async () => {
+    seedSettings({})
+    render(<GeneralTab />)
+
+    const select = await screen.findByTestId('import-ebook-content-check')
+    expect(select).toHaveValue('warn')
+    expect(within(select).getAllByRole('option').map(o => o.getAttribute('value'))).toEqual(['off', 'warn', 'block'])
+
+    fireEvent.change(select, { target: { value: 'block' } })
+    await waitFor(() => expect(m.setSetting).toHaveBeenCalledWith('import.ebook.content_check', 'block'))
+    expect(select).toHaveValue('block')
+  })
+
+  it('shows a stored value', async () => {
+    seedSettings({ 'import.ebook.content_check': 'off' })
+    render(<GeneralTab />)
+    expect(await screen.findByTestId('import-ebook-content-check')).toHaveValue('off')
+  })
+
+  it('is not offered to a non admin', async () => {
+    auth.isAdmin = false
+    try {
+      seedSettings({})
+      render(<GeneralTab />)
+      await waitFor(() => expect(m.listSettings).toHaveBeenCalled())
+      expect(screen.queryByTestId('import-ebook-content-check')).not.toBeInTheDocument()
+    } finally {
+      auth.isAdmin = true
+    }
+  })
+})
+
 describe('GeneralTab preferred language', () => {
   it('shows the save error inline', async () => {
     m.setSetting.mockRejectedValueOnce(new Error('invalid language'))

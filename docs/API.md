@@ -994,7 +994,32 @@ without a custom template:
 | `format` | `ebook` \| `audiobook` on `bookImported` and `upgrade`. **Omitted for Apprise targets only** (a URL with a `/notify` path segment) — Apprise reserves `format` for the body markup and rejects anything but `text`/`html`/`markdown` with HTTP 400. Every other consumer still receives it |
 | `mediaFormat` | the same value as `format`, always present. Use this one if your relay is Apprise, or if you want a key that is never stripped |
 | event extras | `author`, `size`, `path`, `status`, `clientId` when relevant |
+| `contentCheck` | on `bookImported` when `import.ebook.content_check` is `warn` (the default) and the file looks like another book, and on `downloadFailed` when `block` refused the download. Absent when nothing was flagged, and never present when the check is `off`. See below |
 | `requestCreated` extras | `kind` (`book` \| `author`), `username`, `mediaType`, `requestId`. `title`, `author` and `username` have control and invisible characters removed, are length capped, and have `@`, `<`, `>`, `[` and `]` replaced with fullwidth lookalikes, and the `://` of any URL broken the same way, so a title or username cannot mention a channel, use a Slack escape such as `<!channel>`, form a markdown link or autolink a URL. The same request from the same person notifies at most once an hour, and one requester at most 10 times an hour. The event is off on every webhook until its **Request** toggle is turned on |
+
+**`contentCheck`** (#3015) says what the post-download content check found. The
+same object rides on the `bookImported` history row's `data` and webhook in
+`warn` mode, and on the `importFailed` history row's `data` and the
+`downloadFailed` webhook in `block` mode. For an ebook:
+
+```json
+{
+  "kind": "ebook",
+  "bookTitle": "Mary, Mary: Alex Cross, Book 11",
+  "bookAuthor": "James Patterson",
+  "mismatches": [
+    { "file": "book.epub", "title": "Mary and Mr Eliot: A Sort of Love Story", "author": "Mary Trevelyan" }
+  ]
+}
+```
+
+`mismatches` lists each EPUB that disagreed on both title and author. The text is
+cleaned like other text that comes from outside Bindery: control characters are
+removed, length is capped, and `@`, `<`, `>`, `[`, `]` and the `://` of a URL are
+replaced with fullwidth lookalikes, so a hostile file cannot mention a channel or
+form a link in a chat relay. The setting that controls it, `import.ebook.content_check`,
+takes `off`, `warn` (the default) or `block`, is admin only, and is listed by
+`GET /api/v1/settings/descriptors`.
 
 Which events a webhook receives is set per notification by `onGrab`,
 `onImport`, `onUpgrade`, `onFailure`, `onHealth`, `onBookAnnounced` and

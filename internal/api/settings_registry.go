@@ -234,6 +234,12 @@ var settingDescriptors = []SettingDescriptor{
 		State:       SettingStateActive,
 	},
 	{
+		Key: SettingImportEbookContentCheck, Type: SettingTypeEnum, Default: "warn",
+		Values:      contentCheckValues,
+		Description: "Compare a downloaded EPUB's own title and author with the book it was grabbed for. warn imports it and records the mismatch on the History event and webhook, block refuses the download and blocklists the release, off skips the check. Match to book and manual import always skip it.",
+		State:       SettingStateActive,
+	},
+	{
 		Key: SettingImportDropFolder, Type: SettingTypeString, Default: "",
 		Description: "Directory an external mode import hands finished downloads to. Must exist inside the container. Empty disables the handoff.",
 		State:       SettingStateActive,

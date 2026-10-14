@@ -107,7 +107,16 @@ type Scanner struct {
 	// downloaded EPUB declaring a language the author's metadata profile does
 	// not allow is rejected and blocklisted instead of relabelling the book.
 	// Nil disables the check, exactly as an unwired format check does.
-	metadataProfiles     *db.MetadataProfileRepo
+	metadataProfiles *db.MetadataProfileRepo
+	// authorAliases backs the ebook content check (#3015): a file whose
+	// dc:creator is a pen name or house name the author is known under counts as
+	// the author. Nil leaves the check comparing the author's own name only.
+	authorAliases *db.AuthorAliasRepo
+	// onContentCheck, when non-nil, is called each time a content check
+	// actually runs, with "ebook" or "audiobook". A test seam: it proves the
+	// check runs for a polled download and never for a library scan or a
+	// manual import.
+	onContentCheck       func(kind string)
 	libraryDir           string
 	audiobookDir         string
 	audiobookDownloadDir string
@@ -905,18 +914,32 @@ func (s *Scanner) updateDownloadStatus(ctx context.Context, id int64, status mod
 // "import failed" event in the notifier enum, so importFailed and
 // downloadFailed share the channel.
 func (s *Scanner) failImport(ctx context.Context, dl *models.Download, status models.DownloadState, reason string) {
+	s.failImportWithCheck(ctx, dl, status, reason, nil)
+}
+
+// failImportWithCheck is failImport for a download a content check refused
+// (#3015, #3246): the importFailed event and the failure webhook carry the same
+// contentCheck object a warn mode import attaches to bookImported, so a
+// consumer sees what was found, not only the message.
+func (s *Scanner) failImportWithCheck(ctx context.Context, dl *models.Download, status models.DownloadState, reason string, contentCheck map[string]any) {
 	if err := s.downloads.SetErrorWithStatus(ctx, dl.ID, status, reason); err != nil {
 		slog.Warn("failed to persist import error", "download_id", dl.ID, "status", status, "error", err)
 	}
-	s.createHistoryEvent(ctx, models.HistoryEventImportFailed, dl.Title, dl.BookID, map[string]string{
+	data := map[string]any{
 		"guid":    dl.GUID,
 		"message": reason,
 		"status":  string(status),
-	})
-	s.notify(ctx, notifierEventDownloadFailed, map[string]interface{}{
+	}
+	payload := map[string]interface{}{
 		"title":   dl.Title,
 		"message": reason,
-	})
+	}
+	if contentCheck != nil {
+		data["contentCheck"] = contentCheck
+		payload["contentCheck"] = contentCheck
+	}
+	s.createHistoryEventData(ctx, models.HistoryEventImportFailed, dl.Title, dl.BookID, data)
+	s.notify(ctx, notifierEventDownloadFailed, payload)
 }
 
 // blockTinyOnlyDownload blocks a download whose only ebook files are under
@@ -944,6 +967,12 @@ func (s *Scanner) recordUnmatchedImportPath(ctx context.Context, downloadID int6
 }
 
 func (s *Scanner) createHistoryEvent(ctx context.Context, eventType string, sourceTitle string, bookID *int64, data map[string]string) {
+	s.createHistoryEventData(ctx, eventType, sourceTitle, bookID, data)
+}
+
+// createHistoryEventData is createHistoryEvent for a payload with a nested
+// value, such as the contentCheck object. The data column is JSON either way.
+func (s *Scanner) createHistoryEventData(ctx context.Context, eventType string, sourceTitle string, bookID *int64, data any) {
 	if s.history == nil {
 		return
 	}
@@ -1707,6 +1736,11 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 		}
 	}
 
+	// Whether the grab named a book. Only such a download is content checked
+	// (#3015, #3246): one matched from its own metadata just below agrees with
+	// that book by construction.
+	grabbedForBook := dl.BookID != nil
+
 	// Recover an association for downloads grabbed without a BookID (the
 	// free-text Search page does not tie a release to a local book) before
 	// falling through to the "unmatched" failure. Prefer the file's embedded
@@ -1829,6 +1863,30 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 			s.blocklistRejectedRelease(ctx, dl, langCheck.reason)
 			s.failImport(ctx, dl, models.StateImportBlocked, langCheck.reason)
 			return
+		}
+	}
+
+	// Post-download content check, ebook half (#3015). The file's own dc:title
+	// and dc:creator are compared with the book the download was grabbed for.
+	// In block mode a definite mismatch is refused exactly like the language
+	// check above; in warn mode (the default) the import goes ahead and the
+	// finding rides on the bookImported event and webhook (contentCheck).
+	// Skipped for a manual import, Match to book and a book matched from the
+	// file itself. See content_check.go.
+	var contentCheck map[string]any
+	if detectedFormat != models.MediaTypeAudiobook && len(bookFiles) > 0 && grabbedForBook && book != nil && !isManualImport(ctx) {
+		if res := s.checkEbookContent(ctx, book, author, bookFiles); res.flagged {
+			if res.blocks() {
+				slog.Warn("import blocked: file looks like a different book",
+					"title", dl.Title, "bookID", book.ID, "book", book.Title)
+				s.recordUnmatchedImportPath(ctx, dl.ID, downloadPath)
+				s.blocklistRejectedRelease(ctx, dl, res.reason)
+				s.failImportWithCheck(ctx, dl, models.StateImportBlocked, res.reason, res.data)
+				return
+			}
+			slog.Warn("downloaded file looks like a different book; importing it because import.ebook.content_check is warn",
+				"title", dl.Title, "bookID", book.ID, "book", book.Title)
+			contentCheck = res.data
 		}
 	}
 
@@ -2596,9 +2654,9 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 		// lands here, so the download still ends up with exactly one
 		// bookImported row naming every format.
 		importData := ebookImportHistoryData(importedDestPaths)
-		s.createHistoryEvent(ctx, models.HistoryEventBookImported, dl.Title, dl.BookID, importData)
+		s.createHistoryEventData(ctx, models.HistoryEventBookImported, dl.Title, dl.BookID, withContentCheck(importData, contentCheck))
 		s.recordFixMatchMove(ctx, book, importData["path"])
-		s.notify(ctx, notifierEventBookImported, importedPayload(book, dl, models.MediaTypeEbook, "", nil))
+		s.notify(ctx, notifierEventBookImported, withContentCheckPayload(importedPayload(book, dl, models.MediaTypeEbook, "", nil), contentCheck))
 
 		// For "move" mode bindery has no further use for the source files. The
 		// download folder may, however, be a path shared with sibling torrents
