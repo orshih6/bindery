@@ -49,9 +49,20 @@ func TestIsUnambiguousBundleTitle(t *testing.T) {
 		{"Boxed In", false},
 		{"Set This House on Fire", false},
 
+		{"Collected Short Stories [51 stories]", false},
+		{"A Novel [Set in Wartime London]", false},
+		{"Leviathan Wakes", false},
+		{"Catch 22", false},
+		{"Fahrenheit 451", false},
+		{"", false},
+
 		// Near misses for the "(Set)" branch (#3013). Only the whole
-		// parenthesised word counts: a bare "set" is an everyday word, and a
-		// longer parenthetical that starts with it describes a setting.
+		// parenthesised word at the END of the title counts: a bare "set" is
+		// an everyday word, a longer parenthetical that starts with it
+		// describes a setting, and a "(Set)" with text after it is part of a
+		// title rather than a product label. A trailing "!" or "." is not
+		// accepted: no real bundle listing was observed with one, and each
+		// extra allowance widens an unconditional filter.
 		{"The Set", false},
 		{"Set in Stone", false},
 		{"Upset", false},
@@ -61,12 +72,10 @@ func TestIsUnambiguousBundleTitle(t *testing.T) {
 		{"Hotel (Settings)", false},
 		{"Gold (Settled)", false},
 		{"A Novel (Setup)", false},
-		{"Collected Short Stories [51 stories]", false},
-		{"A Novel [Set in Wartime London]", false},
-		{"Leviathan Wakes", false},
-		{"Catch 22", false},
-		{"Fahrenheit 451", false},
-		{"", false},
+		{"Foo (Set): A Novel", false},
+		{"Foo (SET) 2", false},
+		{"Ready (Set) Go", false},
+		{"Ready (Set) Go (Set)", true}, // only the trailing one is the label
 	}
 	for _, c := range cases {
 		if got := IsUnambiguousBundleTitle(c.title); got != c.want {
@@ -148,6 +157,9 @@ func TestBundleTitleMarkers3013(t *testing.T) {
 		{"Dragon Riders (3 Books)", false, true},
 		{"Dragon Riders: 12 Books", false, true},
 		{"5 Stephen King Books!", false, true},
+		{"How To Train Your Dragon - 10 Books!", false, true},
+		{"How To Train Your Dragon - 10 books.", false, true},
+		{"Dragon Riders (3 Books)!", false, true},
 
 		// Near misses that must survive both tiers.
 		{"The Set", false, false},
@@ -163,6 +175,10 @@ func TestBundleTitleMarkers3013(t *testing.T) {
 		{"The Seven Books of Magic", false, false},
 		{"Ten Books of Wisdom", false, false},
 		{"Book 3: The Third", false, false},
+		// The trailing-count tolerance for "!" and "." must not start
+		// matching mid-title.
+		{"Oh No! 2 Books Are Missing", false, false},
+		{"Wow. 3 Books. A Story", false, false},
 		// Numbers as part of a real title.
 		{"1984", false, false},
 		{"11/22/63", false, false},
