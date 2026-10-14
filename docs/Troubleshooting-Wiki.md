@@ -47,6 +47,40 @@ next search picks another release.
 - **You would rather be warned than blocked**: set the check to `warn`. The
   import goes ahead and the History row shows what was found.
 
+
+### What the content check does not catch, and where it can be wrong
+
+Use `block` with care. The check compares what the file says about itself, so it
+inherits whatever that data gets wrong. Known limits:
+
+- **Spelling variants of a name or title that Bindery does not fold**: a
+  transliteration (`Fyodor Dostoyevsky` against `Fjodor Dostojewski`, `Schuld und
+  Suehne` against `Schuld und Sühne`), a different English edition title
+  (`Philosopher's Stone` against `Sorcerer's Stone`), `1984` against `Nineteen
+  Eighty-Four`, or a real name against its pen name when no alias is recorded
+  (`Eric Arthur Blair` for `George Orwell`). Aliases fix author spelling variants,
+  and a variant title with a matching author is never flagged because both must
+  disagree. Where it matters, leave the check on `warn`.
+- **A download that is wholly one other book**: an audiobook folder whose every
+  file carries one other title passes, because that is what a translated or
+  retitled edition looks like. In `warn` and `block` the `contentCheck` object
+  then carries `retitled` with the title and file count, and History shows a quiet
+  line, but nothing is blocked.
+- **`Dune` against `Dune Messiah`**: a short wanted title is supported by any
+  title that contains it as whole words, by design, so this passes.
+- **Multi-part single books** such as The Lord of the Rings or The Chronicles of
+  Narnia, which are one catalogue book whose files may carry the parts' titles.
+- **Transliterated and non-Latin editions** never flag; a wrong book in another
+  script is not caught either.
+- **Sampling**: more than 500 audio files are sampled evenly, and two adjacent
+  foreign files can fall between samples.
+- **Formats that are not read**: `.wma`, `.aac` and `.wav` audiobook files carry no
+  tags the check reads, so they fail open, as do unreadable files.
+- **Retry import after a book was matched from the file name**: a download grabbed
+  without a book is matched to one from its file or release name, and that match is
+  saved on the download. Bindery does not record that it was a guess, so Retry
+  import on such a download checks the saved book as if it had been grabbed for it.
+
 ## Bindery will not start after upgrading: "foreign_key_check found N violation(s)"
 
 ```

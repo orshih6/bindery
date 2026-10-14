@@ -2,7 +2,9 @@ package importer
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/vavallee/bindery/internal/indexer"
 	"github.com/vavallee/bindery/internal/seriesmatch"
@@ -84,10 +86,106 @@ func titleFoldVariants(s string) []string {
 	s = textutil.RestoreFilingForm(s)
 	a := dropLeadingArticle(textutil.FoldForSearch(s))
 	b := dropLeadingArticle(textutil.FoldForSearch(textutil.TransliterateUmlauts(strings.ToLower(s))))
-	if a == b {
-		return []string{a}
+	out := []string{a}
+	if b != a {
+		out = append(out, b)
 	}
-	return []string{a, b}
+	// Bounded folds, kept as extra forms beside the plain ones so they only ever
+	// add ways to match: abbreviations, spelled numbers, and the same title with
+	// its spaces removed (so "Hitch-Hiker's" meets "Hitchhiker's").
+	base := a
+	if c := foldTitleTokens(a); c != a {
+		out = append(out, c)
+		base = c
+	}
+	if strings.Contains(base, " ") {
+		out = append(out, spacelessMark+strings.ReplaceAll(base, " ", ""))
+	}
+	return out
+}
+
+// spacelessMark starts a form with its spaces removed. Such a form can only
+// ever equal another spaceless form: the mark is not a word character, so no
+// whole word search lands inside one.
+const spacelessMark = "~"
+
+var titleAbbreviations = map[string]string{"dr": "doctor", "mr": "mister", "mrs": "missus", "st": "saint"}
+
+var titleNumberValues = map[string]int{
+	"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+	"nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+	"sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,
+	"forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
+}
+
+// foldTitleTokens rewrites a folded title so common spellings meet: Dr, Mr, Mrs
+// and St become their long forms, spelled numbers up to twenty and the tens
+// become digits ("twenty two" is 22), "twenty thousand" and "20 000" both become
+// 20000. It is a bounded list on purpose. It does not try to make "1984" meet
+// "Nineteen Eighty-Four", and "Sorcerer's" never meets "Philosopher's".
+func foldTitleTokens(s string) string {
+	toks := strings.Fields(s)
+	out := make([]string, 0, len(toks))
+	for _, t := range toks {
+		if long, ok := titleAbbreviations[t]; ok {
+			out = append(out, long)
+			continue
+		}
+		if n, ok := titleNumberValues[t]; ok {
+			t = strconv.Itoa(n)
+		}
+		last := len(out) - 1
+		switch {
+		case last >= 0 && t == "thousand" && isDigits(out[last]):
+			out[last] += "000"
+			continue
+		case last >= 0 && len(t) == 3 && isDigits(t) && len(out[last]) <= 3 && isDigits(out[last]):
+			out[last] += t
+			continue
+		case last >= 0 && len(t) == 1 && isDigits(t) && t != "0" && len(out[last]) == 2 && out[last][1] == '0' && isDigits(out[last]):
+			// tens then units: "20" "2" is 22.
+			out[last] = out[last][:1] + t
+			continue
+		}
+		out = append(out, t)
+	}
+	return strings.Join(out, " ")
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// nonLatinAgainstLatin reports whether one of a and b is written in a script
+// with no Latin letter in it and the other has Latin letters. A comparison of
+// such a pair says nothing: a Russian or Japanese edition of a Latin catalogued
+// book is the same book, not a different one. Text with no letters at all (a
+// bare number) is neutral, and two non-Latin texts are compared as usual.
+func nonLatinAgainstLatin(a, b string) bool {
+	al, alat := scriptOf(a)
+	bl, blat := scriptOf(b)
+	return (al && !alat && blat) || (bl && !blat && alat)
+}
+
+// scriptOf reports whether s has any letter and whether any of them is Latin.
+func scriptOf(s string) (hasLetter, hasLatin bool) {
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			hasLetter = true
+			if unicode.Is(unicode.Latin, r) {
+				return true, true
+			}
+		}
+	}
+	return hasLetter, false
 }
 
 // dropLeadingArticle removes a leading "the", "a" or "an" from a folded title,

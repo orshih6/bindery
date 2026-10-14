@@ -76,6 +76,14 @@ func TestEbookDefiniteMismatch_NegativeCorpus(t *testing.T) {
 		{"co-authored, one credit matches", "The President Is Missing", []string{"James Patterson"}, "The President Is Missing", "Bill Clinton, James Patterson"},
 		{"pen name through an alias", "The Tower Treasure", []string{"Leslie McFarlane", "Franklin W. Dixon"}, "Hardy Boys 01", "Franklin W. Dixon"},
 		{"edition title differs, author same", "Harry Potter and the Philosopher's Stone", []string{"J. K. Rowling"}, "Harry Potter and the Sorcerer's Stone", "J.K. Rowling"},
+		{"placeholder creator with a title variant", "Harry Potter and the Philosopher's Stone", []string{"J.K. Rowling"}, "Harry Potter and the Sorcerer's Stone", "Unknown"},
+		{"publisher as creator with a title variant", "Harry Potter and the Philosopher's Stone", []string{"J.K. Rowling"}, "Harry Potter and the Sorcerer's Stone", "Scholastic Inc."},
+		{"email as creator with a title variant", "Harry Potter and the Philosopher's Stone", []string{"J.K. Rowling"}, "Harry Potter and the Sorcerer's Stone", "scans@example.org"},
+		{"hyphen and apostrophe spelling", "The Hitch-Hiker's Guide to the Galaxy", []string{"Douglas Adams"}, "The Hitchhiker's Guide to the Galaxy", "Somebody Else"},
+		{"spelled number", "Slaughterhouse-Five", []string{"Kurt Vonnegut"}, "Slaughterhouse 5", "Somebody Else"},
+		{"abbreviation", "Dr. Jekyll and Mr. Hyde", []string{"Robert Louis Stevenson"}, "Doctor Jekyll and Mister Hyde", "Somebody Else"},
+		{"Russian edition", "Crime and Punishment", []string{"Fyodor Dostoevsky"}, "Преступление и наказание", "Фёдор Достоевский"},
+		{"Hebrew edition", "Sapiens", []string{"Yuval Noah Harari"}, "ספיינס", "יובל נח הררי"},
 		{"nothing at all", "Mary, Mary", []string{"James Patterson"}, "", ""},
 	}
 	for _, r := range rows {

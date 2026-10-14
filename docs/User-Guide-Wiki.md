@@ -518,15 +518,40 @@ name can say one book while the EPUB inside is another, and without a check that
 file imports under the wrong book and the book is never searched for again. When
 a download tied to a wanted book finishes, Bindery reads the EPUB's `dc:title`
 and `dc:creator` and compares them with the book. Only a definite mismatch
-counts: the title is not the book's title (with its series suffix, such as
-`, Book 11`, and its subtitle removed, or the full title, or contained in it as
-whole words) **and** the author is not the book's author or one of its known
-aliases. A pen name or house name works through the alias list, so "Franklin W.
-Dixon" counts as Leslie McFarlane once that alias is on the author. A file with
-no title or no author never counts as a mismatch, a file whose title differs but
+counts: the title does not match **and** the author does not match.
+
+A title matches when, after case, accents, punctuation, a leading article and
+`&` against `and` are set aside, it equals the book's title or one of its
+variants: the title with a trailing series suffix such as `, Book 11` or
+`: Alex Cross, Book 11` removed, the main title before a `: subtitle`, and the
+subtitle itself when it is at least two meaningful words and does not end in a
+generic word such as novel or adventure (so `The Final Empire` matches `Mistborn:
+The Final Empire`). It also matches when the book's title sits inside the file's
+title as whole words (`Mary, Mary` inside `Mary, Mary: Alex Cross, Book 11`), and,
+for ebooks, when a file title of two or more words sits inside the book's title.
+A few spellings are treated as equal: `Dr`, `Mr`, `Mrs` and `St` against Doctor,
+Mister, Missus and Saint, hyphens and apostrophes left out (`Hitch-Hiker's` and
+`Hitchhiker's`), and spelled numbers against digits (`Slaughterhouse Five` and
+`Slaughterhouse 5`, `Twenty Thousand Leagues` and `20,000 Leagues`). Bindery does
+not try to equate `Philosopher's Stone` with `Sorcerer's Stone` or `1984` with
+`Nineteen Eighty-Four`.
+
+An author matches when the file's `dc:creator` names the book's author or one of
+its known aliases. A pen name or house name works through the alias list, so
+"Franklin W. Dixon" counts as Leslie McFarlane once that alias is on the author.
+A creator that names nobody is read as no creator at all, so it can never
+disagree: `Unknown`, `Anonymous`, `Various`, `calibre`, `Project Gutenberg`, a
+publisher such as `Penguin Group` or `Scholastic Inc.`, or anything containing an
+`@`. A file with no title or no author never counts as a mismatch, and neither
+does a comparison across scripts: if one side has no Latin letters and the other
+does (a Russian, Japanese, Hebrew, Arabic or Chinese edition of a book the
+catalogue holds in Latin letters), that title or author cannot disagree. Two
+non-Latin texts are still compared with each other. A file whose title differs but
 whose author agrees (another book in the series) is imported, and a wanted box
 set or omnibus is not compared. If a release holds several EPUBs, it is flagged
-only when every one that could be read is a definite mismatch.
+only when every one that could be read is a definite mismatch, and at most 20 are
+read. The `contentCheck` object lists at most 10 of them and says how many more
+there were.
 
 What happens next is set by **Check ebook contents** under Settings, General,
 File Naming (`import.ebook.content_check`, admin only):

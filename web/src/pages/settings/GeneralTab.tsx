@@ -408,7 +408,7 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
             <select
               id="import-ebook-content-check"
               data-testid="import-ebook-content-check"
-              value={settings['import.ebook.content_check'] || 'warn'}
+              value={contentCheckMode(settings['import.ebook.content_check'])}
               onChange={async e => {
                 const v = e.target.value
                 setSettings(s => ({ ...s, 'import.ebook.content_check': v }))
@@ -431,7 +431,7 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
             <select
               id="import-audiobook-content-check"
               data-testid="import-audiobook-content-check"
-              value={settings['import.audiobook.content_check'] || 'warn'}
+              value={contentCheckMode(settings['import.audiobook.content_check'])}
               onChange={async e => {
                 const v = e.target.value
                 setSettings(s => ({ ...s, 'import.audiobook.content_check': v }))
@@ -934,6 +934,13 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
 
 // dirStatus looks up the health entry for a named directory in the storage
 // response. Returns undefined while loading or when the dir is unconfigured.
+// contentCheckMode is the mode the importer will use for a stored content check
+// value: off and block as stored, warn for everything else, including an unset
+// or unrecognised value, which is how the importer reads it.
+function contentCheckMode(stored: string | undefined): 'off' | 'warn' | 'block' {
+  return stored === 'off' || stored === 'block' ? stored : 'warn'
+}
+
 function dirStatus(storage: StorageHealth | null, name: string): StorageDirStatus | undefined {
   return storage?.dirs.find(d => d.name === name)
 }

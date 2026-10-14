@@ -45,29 +45,43 @@ function parseEventData(data: string): { message?: string; path?: string; size?:
 // Detail line shown under the source title. Most events carry a `message` or a
 // `path`; a language correction carries `from`/`to` ISO codes, which only mean
 // anything shown together.
-function eventDetail(type: string, parsed: ReturnType<typeof parseEventData>, t: (key: string) => string): string {
+type Translate = (key: string, opts?: Record<string, unknown>) => string
+
+function eventDetail(type: string, parsed: ReturnType<typeof parseEventData>, t: Translate): string {
   const usual = baseEventDetail(type, parsed)
   const check = type === 'bookImported' ? contentCheckDetail(parsed.contentCheck, t) : ''
-  return check && usual ? `${check} · ${usual}` : check || usual
+  return check && usual ? `${check} \u00b7 ${usual}` : check || usual
+}
+
+function nonEmptyString(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
 }
 
 // A bookImported row written while the content check was on warn (#3015,
 // #3246) carries `contentCheck`: what the files said about themselves when it
 // was not the grabbed book. Shown so a warn that nobody opens the raw event for
 // is still read. An ebook lists the file's own title and author; an audiobook
-// lists the other works its tracks named, with how many tracks each.
-function contentCheckDetail(raw: unknown, t: (key: string) => string): string {
+// lists the other works its tracks named, with how many tracks each. The data
+// comes from files, so every entry is checked before it is read, and the words
+// around the values come from the translation.
+function contentCheckDetail(raw: unknown, t: Translate): string {
   if (!raw || typeof raw !== 'object') return ''
   const cc = raw as { kind?: unknown; mismatches?: unknown }
   if (!Array.isArray(cc.mismatches) || cc.mismatches.length === 0) return ''
-  const found = cc.mismatches
-    .map((m: { title?: unknown; author?: unknown; count?: unknown }) => {
-      const title = typeof m.title === 'string' ? m.title : ''
+  const found = (cc.mismatches as unknown[])
+    .map((m): string => {
+      if (!m || typeof m !== 'object' || Array.isArray(m)) return ''
+      const entry = m as { title?: unknown; author?: unknown; count?: unknown }
+      const title = nonEmptyString(entry.title)
       if (cc.kind === 'ebook') {
-        const author = typeof m.author === 'string' && m.author ? ` by ${m.author}` : ''
-        return `"${title}"${author}`
+        const author = nonEmptyString(entry.author)
+        if (title && author) return t('history.contentCheckEbookEntry', { title, author })
+        if (title) return t('history.contentCheckEbookTitleOnly', { title })
+        if (author) return t('history.contentCheckEbookAuthorOnly', { author })
+        return ''
       }
-      return typeof m.count === 'number' ? `${title} (${m.count})` : title
+      if (!title) return ''
+      return typeof entry.count === 'number' ? t('history.contentCheckAudiobookEntry', { title, count: entry.count }) : title
     })
     .filter(Boolean)
     .join(', ')

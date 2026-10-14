@@ -726,6 +726,10 @@
     "blocklistFailed": "Could not blocklist this release.",
     "contentCheckEbook": "The file looks like another book",
     "contentCheckAudiobook": "The files include other books",
+    "contentCheckEbookEntry": "\"{{title}}\" by {{author}}",
+    "contentCheckEbookTitleOnly": "\"{{title}}\"",
+    "contentCheckEbookAuthorOnly": "by {{author}}",
+    "contentCheckAudiobookEntry": "{{title}} ({{count}})",
     "allEventTypes": "All event types",
     "events": {
       "grabbed": "Grabbed",

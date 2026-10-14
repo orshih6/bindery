@@ -121,7 +121,10 @@ func evaluateAudiobookContent(wanted string, tags []AudioTags) audiobookContentR
 			return k
 		}
 		k := ""
-		if usableWorkTitle(title) {
+		// A title in a script the wanted title is not written in (a Russian
+		// or Japanese edition of a Latin catalogued book) is the same book in
+		// another language, so it names no other work.
+		if usableWorkTitle(title) && !nonLatinAgainstLatin(wanted, title) {
 			k = workTitleKey(title)
 		}
 		keys[title] = k

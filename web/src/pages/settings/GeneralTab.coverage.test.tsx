@@ -182,6 +182,13 @@ describe('GeneralTab content check', () => {
     expect(m.setSetting).not.toHaveBeenCalledWith('import.ebook.content_check', expect.anything())
   })
 
+  it('shows Warn, what the importer uses, when the stored value is not a known mode', async () => {
+    seedSettings({ 'import.ebook.content_check': 'reject', 'import.audiobook.content_check': 'skip' })
+    render(<GeneralTab />)
+    expect(await screen.findByTestId('import-ebook-content-check')).toHaveValue('warn')
+    expect(screen.getByTestId('import-audiobook-content-check')).toHaveValue('warn')
+  })
+
   it('is not offered to a non admin', async () => {
     auth.isAdmin = false
     try {

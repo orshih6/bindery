@@ -18,9 +18,11 @@ vi.mock('../api/client', async importOriginal => {
   }
 })
 
+const i18nOverrides = vi.hoisted(() => ({ labels: {} as Record<string, string> }))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) => {
+    t: (key: string, opts?: Record<string, unknown> & { defaultValue?: string }) => {
       const labels: Record<string, string> = {
         'common.loading': 'Loading...',
         'history.events.grabbed': 'Grabbed',
@@ -29,6 +31,10 @@ vi.mock('react-i18next', () => ({
         'history.title': 'History',
         'history.contentCheckEbook': 'The file looks like another book',
         'history.contentCheckAudiobook': 'The files include other books',
+        'history.contentCheckEbookEntry': '"{{title}}" by {{author}}',
+        'history.contentCheckEbookTitleOnly': '"{{title}}"',
+        'history.contentCheckEbookAuthorOnly': 'by {{author}}',
+        'history.contentCheckAudiobookEntry': '{{title}} ({{count}})',
         'history.allEventTypes': 'All event types',
         'history.empty': 'No history events found',
         'history.emptyHint': 'Grabs, imports and failures land here as they happen.',
@@ -42,7 +48,9 @@ vi.mock('react-i18next', () => ({
         'pagination.previous': 'Previous',
         'pagination.next': 'Next',
       }
-      return labels[key] ?? opts?.defaultValue ?? key
+      const label = i18nOverrides.labels[key] ?? labels[key]
+      if (label === undefined) return opts?.defaultValue ?? key
+      return label.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(opts?.[name] ?? ''))
     },
   }),
 }))
@@ -398,6 +406,75 @@ describe('HistoryPage', () => {
         'The files include other books: Corralled (9), Coming Home to Myself (8) · /audiobooks/Chase',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('renders a content check that has null, empty and odd entries without throwing', async () => {
+    vi.mocked(api.listHistory).mockResolvedValue({
+      items: [
+        makeHistory({
+          id: 1,
+          eventType: 'bookImported',
+          sourceTitle: 'Odd Entries',
+          data: JSON.stringify({
+            path: '/library/odd.epub',
+            contentCheck: {
+              kind: 'ebook',
+              mismatches: [null, 'text', 7, {}, { title: '', author: 'Mary Trevelyan' }, { title: 'Only A Title', author: '' }],
+            },
+          }),
+        }),
+        makeHistory({
+          id: 2,
+          eventType: 'bookImported',
+          sourceTitle: 'Null Mismatches',
+          data: JSON.stringify({ path: '/library/n.epub', contentCheck: { kind: 'audiobook', mismatches: [null, { count: 3 }] } }),
+        }),
+      ],
+      total: 2,
+      limit: 100,
+      offset: 0,
+    })
+
+    renderHistoryPage()
+    const table = await findDesktopTable()
+    expect(await within(table).findByText('Odd Entries')).toBeInTheDocument()
+    // An empty title never renders as "" by X, and an empty author never as by.
+    expect(
+      within(rowFor('Odd Entries')).getByText(
+        'The file looks like another book: by Mary Trevelyan, "Only A Title" \u00b7 /library/odd.epub',
+      ),
+    ).toBeInTheDocument()
+    // Nothing usable in the list: the row falls back to its path.
+    expect(within(rowFor('Null Mismatches')).getByText('/library/n.epub')).toBeInTheDocument()
+  })
+
+  it('takes the wording around a content check entry from the translation', async () => {
+    i18nOverrides.labels['history.contentCheckEbookEntry'] = '{{title}} von {{author}}'
+    try {
+      vi.mocked(api.listHistory).mockResolvedValue({
+        items: [
+          makeHistory({
+            id: 1,
+            eventType: 'bookImported',
+            sourceTitle: 'Translated Row',
+            data: JSON.stringify({
+              contentCheck: { kind: 'ebook', mismatches: [{ title: 'Moby Dick', author: 'Melville' }] },
+            }),
+          }),
+        ],
+        total: 1,
+        limit: 100,
+        offset: 0,
+      })
+      renderHistoryPage()
+      const table = await findDesktopTable()
+      expect(await within(table).findByText('Translated Row')).toBeInTheDocument()
+      expect(
+        within(rowFor('Translated Row')).getByText('The file looks like another book: Moby Dick von Melville'),
+      ).toBeInTheDocument()
+    } finally {
+      delete i18nOverrides.labels['history.contentCheckEbookEntry']
+    }
   })
 
   it('says what a warn mode content check found on an ebook import (#3015)', async () => {

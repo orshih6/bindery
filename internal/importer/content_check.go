@@ -13,6 +13,7 @@ import (
 	"github.com/vavallee/bindery/internal/metadata"
 	"github.com/vavallee/bindery/internal/models"
 	"github.com/vavallee/bindery/internal/notifier"
+	"github.com/vavallee/bindery/internal/textutil"
 )
 
 // Post-download content check (#3015, #3246).
@@ -99,6 +100,11 @@ type contentCheckResult struct {
 // blocks reports whether the result refuses the download.
 func (r contentCheckResult) blocks() bool { return r.flagged && r.mode == contentCheckBlock }
 
+// maxContentCheckEpubReads bounds how many EPUBs of one release the ebook check
+// opens. A release with more is a pack, and the first twenty settle the question
+// as well as the rest would.
+const maxContentCheckEpubReads = 20
+
 // compilationWordRe matches the words a compilation names itself with that the
 // catalogue's bundle detection does not treat as a bundle on its own: "The
 // Complete Sherlock Holmes", "Collected Stories", "An Anthology", "Best of Poe".
@@ -137,6 +143,11 @@ func ebookTitleMatches(bookTitle, fileTitle string) bool {
 	if strings.TrimSpace(fileTitle) == "" || strings.TrimSpace(bookTitle) == "" {
 		return true
 	}
+	if nonLatinAgainstLatin(bookTitle, fileTitle) {
+		// A Russian, Japanese or Arabic edition of a Latin catalogued book is
+		// the same book. No folding makes the two comparable, so say nothing.
+		return true
+	}
 	return contentTitleSupports(bookTitle, fileTitle, true)
 }
 
@@ -150,10 +161,19 @@ func ebookAuthorMatches(names []string, creator string) bool {
 	if len(creators) == 0 || len(names) == 0 {
 		return true
 	}
+	if creatorIsPlaceholder(creators) {
+		return true
+	}
 	for _, c := range creators {
+		if placeholderCreator(c) {
+			continue
+		}
 		for _, n := range names {
 			if strings.TrimSpace(n) == "" {
 				continue
+			}
+			if nonLatinAgainstLatin(n, c) {
+				return true
 			}
 			if authorMatch(n, c) || authorMatch(c, n) {
 				return true
@@ -161,6 +181,48 @@ func ebookAuthorMatches(names []string, creator string) bool {
 		}
 	}
 	return false
+}
+
+// placeholderCreators are dc:creator values that name nobody: what a converter,
+// a library tool or a scraper writes when it has no author.
+var placeholderCreators = map[string]bool{
+	"unknown": true, "unknown author": true, "anonymous": true, "anon": true, "various": true,
+	"various authors": true, "n a": true, "none": true, "author": true, "admin": true,
+	"calibre": true, "project gutenberg": true, "gutenberg": true,
+}
+
+// publisherCreatorRe matches a creator that is a publisher or an imprint:
+// "Penguin Group", "Scholastic Inc.", "Random House Publishing Group".
+var publisherCreatorRe = regexp.MustCompile(`(?i)\b(?:group|inc|llc|ltd|limited|publishers?|publishing|publications|press|books|house|company|corp|corporation|media|studios)\.?$`)
+
+// placeholderCreator reports whether one creator entry names nobody: a listed
+// placeholder, a publisher name, or anything holding an at sign (an email
+// address). Such an entry is treated as if the file had no creator.
+func placeholderCreator(c string) bool {
+	c = strings.TrimSpace(c)
+	if c == "" || strings.Contains(c, "@") {
+		return true
+	}
+	if placeholderCreators[textutil.FoldForSearch(c)] {
+		return true
+	}
+	return publisherCreatorRe.MatchString(c)
+}
+
+// creatorIsPlaceholder reports whether every person a creator string credits is
+// a placeholder. creators is splitCreators output: the whole string first, then
+// its parts when it had several.
+func creatorIsPlaceholder(creators []string) bool {
+	parts := creators
+	if len(creators) > 1 {
+		parts = creators[1:]
+	}
+	for _, p := range parts {
+		if !placeholderCreator(p) {
+			return false
+		}
+	}
+	return true
 }
 
 // ebookDefiniteMismatch reports whether an EPUB is plausibly another book: its
@@ -267,10 +329,19 @@ func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, auth
 	}
 	names := s.authorNamesFor(ctx, author)
 
+	// A release with more EPUBs than this is a pack; the first few settle the
+	// question, and reading hundreds of archives would not make it better.
+	if len(epubs) > maxContentCheckEpubReads {
+		epubs = epubs[:maxContentCheckEpubReads]
+	}
+
 	type found struct{ file, title, author string }
 	var read int
 	var mismatches []found
 	for _, f := range epubs {
+		if ctx.Err() != nil {
+			break
+		}
 		meta, err := ReadEpubMetadata(f)
 		if err != nil {
 			continue
@@ -280,7 +351,9 @@ func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, auth
 			mismatches = append(mismatches, found{safeFileText(filepath.Base(f)), safeFileText(meta.Title), safeFileText(meta.Author)})
 		}
 	}
-	if read == 0 || len(mismatches) < read {
+	// A context that ended mid read means the answer is incomplete, and an
+	// incomplete answer never refuses a download (and could not write it down).
+	if ctx.Err() != nil || read == 0 || len(mismatches) < read {
 		return contentCheckResult{mode: mode}
 	}
 
@@ -289,8 +362,11 @@ func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, auth
 		bookAuthor = safeFileText(author.Name)
 	}
 	bookTitle := safeFileText(book.Title)
-	listed := make([]map[string]string, 0, len(mismatches))
-	for _, m := range mismatches {
+	listed := make([]map[string]string, 0, maxContentCheckTitles)
+	for i, m := range mismatches {
+		if i >= maxContentCheckTitles {
+			break
+		}
 		listed = append(listed, map[string]string{"file": m.file, "title": m.title, "author": m.author})
 	}
 	first := mismatches[0]
@@ -301,16 +377,28 @@ func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, auth
 	return contentCheckResult{
 		mode:    mode,
 		flagged: true,
-		data: map[string]any{
-			"kind":       "ebook",
-			"bookTitle":  bookTitle,
-			"bookAuthor": bookAuthor,
-			"mismatches": listed,
-		},
+		data:    ebookCheckData(bookTitle, bookAuthor, listed, len(mismatches), read),
 		reason: fmt.Sprintf("the file says it is %s%s, but the book is %q by %s. "+
 			"Not imported, and the release was blocklisted so the next search picks another. "+
 			"To keep this file anyway, use Match to book in the Queue or manual import; "+
 			"to stop this check, set import.ebook.content_check to warn or off",
 			describeEpub(first.title, first.author), extra, bookTitle, bookAuthor),
 	}
+}
+
+// ebookCheckData builds the contentCheck object of an ebook: the listed
+// mismatches (at most maxContentCheckTitles), how many more there were, and how
+// many EPUBs were read.
+func ebookCheckData(bookTitle, bookAuthor string, listed []map[string]string, total, read int) map[string]any {
+	d := map[string]any{
+		"kind":       "ebook",
+		"bookTitle":  bookTitle,
+		"bookAuthor": bookAuthor,
+		"mismatches": listed,
+		"filesRead":  read,
+	}
+	if more := total - len(listed); more > 0 {
+		d["moreTitles"] = more
+	}
+	return d
 }
