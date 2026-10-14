@@ -102,8 +102,8 @@ type contentCheckResult struct {
 func (r contentCheckResult) blocks() bool { return r.flagged && r.mode == contentCheckBlock }
 
 // maxContentCheckEpubReads bounds how many EPUBs of one release the ebook check
-// opens. A release with more is a pack, and the first twenty settle the question
-// as well as the rest would.
+// judges. A release with more is a pack; it is not read at all, because the
+// verdict "every EPUB disagrees" cannot be reached on a prefix.
 const maxContentCheckEpubReads = 20
 
 // compilationRe matches the wording a compilation names itself with that the
@@ -118,13 +118,41 @@ const maxContentCheckEpubReads = 20
 // them would silently turn the check off for them.
 var compilationRe = regexp.MustCompile(`(?i)` +
 	`\b(?:omnibus|anthology|anthologies` +
-	`|collected\s+(?:works|stories|novels|poems|essays)` +
-	`|complete\s+(?:works|novels|short\s+stories|stories|poems|collection)` +
+	`|short\s+stories` +
+	`|collected\s+\S+` +
+	`|complete\s+(?:works|novels|stories|poems|collection)` +
 	`|box(?:ed)?\s+set` +
 	`|(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:novels|books|volumes)` +
 	`|trilogy|duology|quartet|quintet|tetralogy|pentalogy)\b` +
+	// "The Complete Chronicles of Conan", "The Complete Tales of Poe": complete,
+	// then a collective noun somewhere after it.
+	`|\bcomplete\b.*\b(?:chronicles|stories|tales|works|novels|adventures|poems|cases|strips|plays|essays|letters|set)\b` +
 	`|^the\s+complete\s+.+\s+series\b` +
+	// "The Complete Calvin and Hobbes", "The Complete Sherlock Holmes": the
+	// complete, then two or three words, and not a guide of some kind.
+	`|^(?:the\s+)?complete\s+(?:[^\s]+\s+){1,2}[^\s]+$` +
+	// "Treasury of Fairy Tales".
+	`|\btreasury\s+of\b.*\b(?:tales|stories|poems|verse|fables|songs|myths|legends|essays|plays)$` +
 	`|\S\s+(?:saga|series)\s*$`)
+
+// collectionShape reports a title that ends in Collection after at least two
+// other words, not counting a leading article: "Harry Potter Collection", "The
+// Dune Saga Collection". "The Memory Collection" has one word before it and "A
+// Collection of Curses" does not end in it, so both stay single books.
+func collectionShape(title string) bool {
+	words := strings.Fields(textutil.FoldForSearch(title))
+	if len(words) > 0 {
+		switch words[0] {
+		case "the", "a", "an":
+			words = words[1:]
+		}
+	}
+	return len(words) >= 3 && words[len(words)-1] == "collection"
+}
+
+// completeGuideRe cancels the "complete, then two or three words" rule for a
+// guide, handbook or course, which is one book.
+var completeGuideRe = regexp.MustCompile(`(?i)\b(?:guide|handbook|manual|course|cookbook|idiot'?s|dummies|reference)\b`)
 
 // numberRangeRe matches a numeric range after a title word: "Dune Chronicles
 // 1-3", "Harry Potter 1-7". The second number must be larger than the first.
@@ -148,9 +176,44 @@ func hasNumberRange(title string) bool {
 // A single book that is really several parts ("The Lord of the Rings", "The
 // Chronicles of Narnia") is a documented limit.
 func bookIsCompilation(title string) bool {
-	return metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != "" ||
-		compilationRe.MatchString(title) || hasNumberRange(title)
+	if metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != "" || hasNumberRange(title) {
+		return true
+	}
+	if collectionShape(title) {
+		return true
+	}
+	if !compilationRe.MatchString(title) {
+		return false
+	}
+	// The "complete X Y" shape alone is not enough for a guide.
+	if m := compilationRe.FindString(title); strings.EqualFold(strings.TrimSpace(m), strings.TrimSpace(title)) && completeGuideRe.MatchString(title) {
+		return false
+	}
+	return true
 }
+
+// bookIsCompilationBy is bookIsCompilation that also knows the book's author:
+// "The Best of Poe" by Edgar Allan Poe is a compilation, and "The Best of Me" and
+// "Best of Friends" are not, because the name after "best of" is the author's.
+func bookIsCompilationBy(title, author string) bool {
+	if bookIsCompilation(title) {
+		return true
+	}
+	if !bestOfRe.MatchString(title) {
+		return false
+	}
+	fields := strings.Fields(textutil.FoldForSearch(author))
+	if len(fields) == 0 {
+		return false
+	}
+	surname := fields[len(fields)-1]
+	if len(surname) < 3 {
+		return false
+	}
+	return containsWholeWords(textutil.FoldForSearch(title), surname)
+}
+
+var bestOfRe = regexp.MustCompile(`(?i)\bbest\s+of\b`)
 
 // splitCreators breaks a dc:creator string that credits several people into one
 // entry per person where it can tell, and always keeps the whole string as an
@@ -198,17 +261,33 @@ func ebookAuthorMatches(names []string, creator string) bool {
 	if creatorIsPlaceholder(creators) {
 		return true
 	}
+	// A creator is compared with the names in its own script. A name in another
+	// script is no evidence either way, and an author with one Cyrillic alias
+	// must still be able to disagree with a Latin creator. When the author has
+	// no name in the creator's script at all, nothing can be said.
+	var latin, other []string
+	for _, n := range names {
+		if strings.TrimSpace(n) == "" {
+			continue
+		}
+		if l, lat := scriptOf(n); l && !lat {
+			other = append(other, n)
+		} else {
+			latin = append(latin, n)
+		}
+	}
 	for _, c := range creators {
 		if placeholderCreator(c) {
 			continue
 		}
-		for _, n := range names {
-			if strings.TrimSpace(n) == "" {
-				continue
-			}
-			if nonLatinAgainstLatin(n, c) {
-				return true
-			}
+		pool := latin
+		if l, lat := scriptOf(c); l && !lat {
+			pool = other
+		}
+		if len(pool) == 0 {
+			return true
+		}
+		for _, n := range pool {
 			if authorMatch(n, c) || authorMatch(c, n) {
 				return true
 			}
@@ -225,19 +304,35 @@ var placeholderCreators = map[string]bool{
 	"calibre": true, "project gutenberg": true, "gutenberg": true,
 }
 
-// publisherCreatorRe matches a creator that is a publisher or an imprint:
-// "Penguin Group", "Scholastic Inc.", "Random House Publishing Group".
-var publisherCreatorRe = regexp.MustCompile(`(?i)\b(?:group|inc|llc|ltd|limited|publishers?|publishing|publications|press|books|house|company|corp|corporation|media|studios)\.?$`)
+// publisherCreatorRe matches a creator that is a publisher or an imprint by its
+// corporate ending: "Scholastic Inc.", "Penguin Group", "Acme Publishing",
+// "Springer Verlag GmbH". Bare words that are also surnames (House, Press, Books,
+// Media, Company) are deliberately not here: "Stephen House" is an author.
+var publisherCreatorRe = regexp.MustCompile(`(?i)\b(?:group|inc|llc|ltd|gmbh|publishing|publishers?)\.?$`)
+
+// publisherCreators are well known publishers that carry no such ending.
+var publisherCreators = map[string]bool{
+	"penguin": true, "penguin random house": true, "random house": true, "scholastic": true,
+	"harpercollins": true, "harper collins": true, "hachette": true, "macmillan": true,
+	"simon and schuster": true, "bloomsbury": true, "tor books": true, "del rey": true,
+	"oxford university press": true, "cambridge university press": true, "orbit": true,
+}
+
+// emailRe matches a creator that is an email address and nothing else, bare or
+// inside one pair of brackets.
+var emailRe = regexp.MustCompile(`^[(\[<]?[^\s@]+@[^\s@]+[)\]>]?$`)
 
 // placeholderCreator reports whether one creator entry names nobody: a listed
-// placeholder, a publisher name, or anything holding an at sign (an email
-// address). Such an entry is treated as if the file had no creator.
+// placeholder, a publisher name, or an email address on its own. Such an entry
+// is treated as if the file had no creator. An address inside a real name
+// ("Jane Austen (jane@x.org)") leaves the name standing.
 func placeholderCreator(c string) bool {
 	c = strings.TrimSpace(c)
-	if c == "" || strings.Contains(c, "@") {
+	if c == "" || emailRe.MatchString(c) {
 		return true
 	}
-	if placeholderCreators[textutil.FoldForSearch(c)] {
+	folded := textutil.FoldForSearch(c)
+	if placeholderCreators[folded] || publisherCreators[folded] {
 		return true
 	}
 	return publisherCreatorRe.MatchString(c)
@@ -346,7 +441,7 @@ func describeEpub(title, author string) string {
 // the setting is off.
 func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, author *models.Author, files []string) contentCheckResult {
 	mode := s.contentCheckMode(ctx, settingImportEbookContentCheck)
-	if mode == contentCheckOff || book == nil || bookIsCompilation(book.Title) {
+	if mode == contentCheckOff || book == nil || bookIsCompilationBy(book.Title, authorName(author)) {
 		return contentCheckResult{}
 	}
 	var epubs []string
@@ -363,10 +458,18 @@ func (s *Scanner) checkEbookContent(ctx context.Context, book *models.Book, auth
 	}
 	names := s.authorNamesFor(ctx, author)
 
-	// A release with more EPUBs than this is a pack; the first few settle the
-	// question, and reading hundreds of archives would not make it better.
+	// A release with more EPUBs than the cap is not judged: a prefix of it could
+	// be all wrong books while the right one sits later in the list, and the
+	// importer picks the file for the book itself. Fail open, and say so.
 	if len(epubs) > maxContentCheckEpubReads {
-		epubs = epubs[:maxContentCheckEpubReads]
+		return contentCheckResult{mode: mode, data: map[string]any{
+			"kind":       "ebook",
+			"bookTitle":  safeFileText(book.Title),
+			"bookAuthor": safeFileText(authorName(author)),
+			"truncated":  true,
+			"filesRead":  0,
+			"filesTotal": len(epubs),
+		}}
 	}
 
 	type found struct{ file, title, author string }
@@ -435,4 +538,12 @@ func ebookCheckData(bookTitle, bookAuthor string, listed []map[string]string, to
 		d["moreTitles"] = more
 	}
 	return d
+}
+
+// authorName is the author's name, or "" for no author.
+func authorName(a *models.Author) string {
+	if a == nil {
+		return ""
+	}
+	return a.Name
 }

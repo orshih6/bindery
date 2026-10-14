@@ -549,9 +549,10 @@ catalogue holds in Latin letters), that title or author cannot disagree. Two
 non-Latin texts are still compared with each other. A file whose title differs but
 whose author agrees (another book in the series) is imported, and a wanted box
 set or omnibus is not compared. If a release holds several EPUBs, it is flagged
-only when every one that could be read is a definite mismatch, and at most 20 are
-read. The `contentCheck` object lists at most 10 of them and says how many more
-there were.
+only when every one that could be read is a definite mismatch. A release with more
+than 20 EPUBs is not judged (a verdict on a prefix could condemn the right book),
+and the `contentCheck` note says `truncated`. The object lists at most 10
+mismatches and says how many more there were.
 
 What happens next is set by **Check ebook contents** under Settings, General,
 File Naming (`import.ebook.content_check`, admin only):
@@ -614,11 +615,14 @@ flagged, because that is what a translated or retitled edition looks like; the
 `contentCheck` object then carries `retitled` with the title and the number of
 files, in `warn` and in `block` mode alike, and History shows a single quiet line.
 Nothing is blocked and no message changes. A wanted box set, omnibus, anthology,
-trilogy, duology, quartet, series or saga title, a `Complete Works` or `Collected
-Works` title, a counted set such as `Four Novels` and a numeric range such as
-`Harry Potter 1-7` is not compared. Ordinary titles that merely contain the words
-complete, collection or best of (`The Complete Maus`, `The Best of Me`) are
-compared. At most 500 files are read, spread across the folder, and the whole
+trilogy, duology, quartet, series or saga title, `Short Stories`, `Collected ...`,
+`Complete Works` or `Complete Chronicles` style titles, `The Complete` plus two or
+three words (`The Complete Sherlock Holmes`), `X Y Collection` (`Harry Potter
+Collection`), `Treasury of Fairy Tales`, `The Best of <the author's name>` (`The Best
+of Poe` by Edgar Allan Poe), a counted set such as `Four Novels` and a numeric range
+such as `Harry Potter 1-7` is not compared. Ordinary titles that merely contain the
+words complete, collection or best of (`The Complete Maus`, `The Best of Me`, `A
+Collection of Curses`) are compared. At most 500 files are read, spread across the folder, and the whole
 check has a 30 second budget: if reading runs out of time the check fails open,
 the audiobook imports, and the `contentCheck` object says `truncated: true`.
 

@@ -36,7 +36,7 @@ vi.mock('react-i18next', () => ({
         'history.contentCheckEbookAuthorOnly': 'by {{author}}',
         'history.contentCheckAudiobookEntry': '{{title}} ({{count}})',
         'history.contentCheckRetitled': 'Every file is titled "{{title}}" ({{count}} files), so it was imported as a retitled edition',
-        'history.contentCheckTruncated': 'The content check ran out of time and was skipped',
+        'history.contentCheckTruncated': 'The content check was cut short and skipped',
         'history.allEventTypes': 'All event types',
         'history.empty': 'No history events found',
         'history.emptyHint': 'Grabs, imports and failures land here as they happen.',
@@ -489,7 +489,7 @@ describe('HistoryPage', () => {
       ),
     ).toBeInTheDocument()
     expect(
-      within(rowFor('Slow Release')).getByText('The content check ran out of time and was skipped'),
+      within(rowFor('Slow Release')).getByText('The content check was cut short and skipped'),
     ).toBeInTheDocument()
     // A malformed note is ignored and the row falls back to its path.
     expect(within(rowFor('Odd Note')).getByText('/x')).toBeInTheDocument()

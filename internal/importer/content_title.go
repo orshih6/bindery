@@ -84,13 +84,19 @@ var genericSubtitleTails = map[string]bool{
 	"novel": true, "adventure": true, "thriller": true, "mystery": true, "memoir": true, "story": true,
 	"stories": true, "romance": true, "saga": true, "tale": true, "edition": true, "audiobook": true,
 	"unabridged": true, "series": true,
+	"part": true, "episode": true, "volume": true, "vol": true, "book": true, "chapter": true,
 }
 
 // genericSubtitleTail reports whether a subtitle ends in a word that labels a
 // kind of book rather than naming one.
 func genericSubtitleTail(sub string) bool {
 	toks := strings.Fields(textutil.FoldForSearch(sub))
-	return len(toks) > 0 && genericSubtitleTails[toks[len(toks)-1]]
+	if len(toks) == 0 {
+		return false
+	}
+	// "Part Two", "Book 3", "Episode Four": a label that opens the subtitle
+	// (the number after it is the last word) is as generic as one that closes it.
+	return genericSubtitleTails[toks[len(toks)-1]] || genericSubtitleTails[toks[0]]
 }
 
 // titleFoldVariants folds s into the comparison alphabet and returns it, plus

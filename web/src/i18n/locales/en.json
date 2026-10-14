@@ -731,7 +731,7 @@
     "contentCheckEbookAuthorOnly": "by {{author}}",
     "contentCheckAudiobookEntry": "{{title}} ({{count}})",
     "contentCheckRetitled": "Every file is titled \"{{title}}\" ({{count}} files), so it was imported as a retitled edition",
-    "contentCheckTruncated": "The content check ran out of time and was skipped",
+    "contentCheckTruncated": "The content check was cut short and skipped",
     "allEventTypes": "All event types",
     "events": {
       "grabbed": "Grabbed",

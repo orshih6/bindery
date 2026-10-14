@@ -108,9 +108,30 @@ var noTitleAlbums = map[string]bool{
 	"harpercollins audio": true, "simon and schuster audio": true, "graphicaudio": true,
 }
 
-// urlLikeRe matches a web address or a bare domain: a release group stamping its
-// name into the album field.
-var urlLikeRe = regexp.MustCompile(`(?i)://|\bwww\.|\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|info|ru|to|me|cc|io|biz|xyz)\b`)
+// domainTokenRe matches one word that is a domain name: labels, dots, a known
+// top level domain.
+var domainTokenRe = regexp.MustCompile(`(?i)^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|ru|to|me|cc|io|biz|xyz)$`)
+
+// urlLike reports whether an album is a web address: it has a scheme, or a
+// www. prefix on a word, or a word that is a domain name with at least two dots,
+// or it is a domain name and nothing else. "Dot.com Secrets" and "Ask Dr.Me" are
+// titles: one dotted word among others is not a release group's stamp.
+func urlLike(s string) bool {
+	if strings.Contains(s, "://") {
+		return true
+	}
+	words := strings.Fields(s)
+	for _, w := range words {
+		w = strings.Trim(w, "()[]<>,;:\"'")
+		if strings.HasPrefix(strings.ToLower(w), "www.") {
+			return true
+		}
+		if domainTokenRe.MatchString(w) && (strings.Count(w, ".") >= 2 || len(words) == 1) {
+			return true
+		}
+	}
+	return false
+}
 
 // tagNamesNoWork reports whether an album or track title in a file's tags names
 // no work: a placeholder, a publisher credit, a web address, or the file's own
@@ -118,7 +139,7 @@ var urlLikeRe = regexp.MustCompile(`(?i)://|\bwww\.|\b[a-z0-9][a-z0-9-]*\.(?:com
 // album).
 func tagNamesNoWork(t AudioTags, title string) bool {
 	k := textutil.FoldForSearch(title)
-	if k == "" || noTitleAlbums[k] || urlLikeRe.MatchString(title) {
+	if k == "" || noTitleAlbums[k] || urlLike(title) {
 		return true
 	}
 	for _, who := range []string{t.Artist, t.AlbumArtist, t.Composer} {
@@ -350,7 +371,7 @@ func sampleEvenly(files []string, n int) []string {
 // omnibus, or when the download holds no audio file.
 func (s *Scanner) checkAudiobookContent(ctx context.Context, book *models.Book, author *models.Author, files []string) contentCheckResult {
 	mode := s.contentCheckMode(ctx, settingImportAudiobookContentCheck)
-	if mode == contentCheckOff || book == nil || bookIsCompilation(book.Title) {
+	if mode == contentCheckOff || book == nil || bookIsCompilationBy(book.Title, authorName(author)) {
 		return contentCheckResult{}
 	}
 	audio := make([]string, 0, len(files))

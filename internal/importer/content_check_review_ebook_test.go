@@ -1,7 +1,6 @@
 package importer
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,8 +129,8 @@ func TestEvaluateAudiobookContent_NonLatinTitlesAreNotUsable(t *testing.T) {
 	}
 }
 
-// The ebook mismatches list is capped, and so is the number of EPUBs read.
-func TestEbookContentCheck_ListAndReadsAreCapped(t *testing.T) {
+// The ebook mismatches list is capped at 10 entries.
+func TestEbookContentCheck_ListIsCapped(t *testing.T) {
 	f := newContentFixture(t, "The Racketeer", "John Grisham")
 	f.setMode(t, ebookCheckKey, "block")
 	f.writeEpubTitled(t, "seed.epub", "Recursion", "Blake Crouch")
@@ -142,7 +141,7 @@ func TestEbookContentCheck_ListAndReadsAreCapped(t *testing.T) {
 	if err := os.Remove(filepath.Join(f.dir, "seed.epub")); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 400; i++ {
+	for i := 0; i < 15; i++ {
 		if err := os.WriteFile(filepath.Join(f.dir, fmt.Sprintf("book_%03d.epub", i)), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -153,21 +152,14 @@ func TestEbookContentCheck_ListAndReadsAreCapped(t *testing.T) {
 	if !ok {
 		t.Fatalf("no contentCheck on the refusal: %v", f.eventData(t, models.HistoryEventImportFailed))
 	}
-	call := f.notif.lookup("downloadFailed")
-	if call == nil {
-		t.Fatal("no downloadFailed webhook")
-	}
-	if blob, _ := json.Marshal(call.payload); len(blob) > 8000 {
-		t.Errorf("the failure webhook is %d bytes for 400 files", len(blob))
-	}
 	list, _ := cc["mismatches"].([]any)
 	if len(list) != maxContentCheckTitles {
 		t.Errorf("listed %d mismatches, want the cap of %d", len(list), maxContentCheckTitles)
 	}
-	if got := cc["filesRead"]; got != float64(maxContentCheckEpubReads) {
-		t.Errorf("filesRead = %v, want %d", got, maxContentCheckEpubReads)
+	if got := cc["filesRead"]; got != float64(15) {
+		t.Errorf("filesRead = %v, want 15", got)
 	}
-	if got := cc["moreTitles"]; got != float64(maxContentCheckEpubReads-maxContentCheckTitles) {
-		t.Errorf("moreTitles = %v, want %d", got, maxContentCheckEpubReads-maxContentCheckTitles)
+	if got := cc["moreTitles"]; got != float64(5) {
+		t.Errorf("moreTitles = %v, want 5", got)
 	}
 }

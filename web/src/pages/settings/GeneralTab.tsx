@@ -932,8 +932,6 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
   )
 }
 
-// dirStatus looks up the health entry for a named directory in the storage
-// response. Returns undefined while loading or when the dir is unconfigured.
 // contentCheckMode is the mode the importer will use for a stored content check
 // value: off and block as stored, warn for everything else, including an unset
 // or unrecognised value, which is how the importer reads it.
@@ -941,6 +939,8 @@ function contentCheckMode(stored: string | undefined): 'off' | 'warn' | 'block' 
   return stored === 'off' || stored === 'block' ? stored : 'warn'
 }
 
+// dirStatus looks up the health entry for a named directory in the storage
+// response. Returns undefined while loading or when the dir is unconfigured.
 function dirStatus(storage: StorageHealth | null, name: string): StorageDirStatus | undefined {
   return storage?.dirs.find(d => d.name === name)
 }

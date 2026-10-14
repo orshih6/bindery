@@ -76,6 +76,25 @@ inherits whatever that data gets wrong. Known limits:
   foreign files can fall between samples.
 - **Formats that are not read**: `.wma`, `.aac` and `.wav` audiobook files carry no
   tags the check reads, so they fail open, as do unreadable files.
+- **A wrong book with a placeholder creator** (Unknown, calibre, a publisher) imports
+  even in `block` mode, because a creator that names nobody can never disagree and
+  both title and author must disagree to flag.
+- **A small foreign share is treated as strays**: files that do not support the
+  book must be at least 5 percent of the tracks read, so 30 foreign files in 700
+  do not flag the folder.
+- **A wrong book in another script never flags**, in either check.
+- **Numeric titles and short number words**: a wanted title like `Slaughterhouse 5`
+  is read as equal to `Slaughterhouse Five`, so titles that differ only by a number
+  word and a digit are the same to the check.
+- **Hung network shares can exceed the budget**: a read already in flight is not
+  interrupted, so the 30 second audiobook budget is checked between files.
+- **A release with more than 20 EPUBs** is not judged at all (the note says
+  `truncated`), since a verdict on a prefix could condemn the right book.
+- **Short story and compilation titles** that are not worded as one (a single word
+  title that is really an anthology) are compared like any book. The compilation
+  skip covers omnibus, anthology, short stories, collected and complete works,
+  trilogy and similar, `Complete` plus two or three words, `X Y Collection`, and
+  `The Best of <the book's author>`.
 - **Retry import after a book was matched from the file name**: a download grabbed
   without a book is matched to one from its file or release name, and that match is
   saved on the download. Bindery does not record that it was a guess, so Retry
