@@ -675,7 +675,7 @@ GET    /api/v1/reorganize/preview                 preview renaming tracked files
 POST   /api/v1/reorganize/apply                   move the selected files {fileIds:[…]} to their templated paths (admin)
 
 GET    /api/v1/history                            grab / import / failure timeline
-POST   /api/v1/history/{id}/blocklist             add the release to the blocklist
+POST   /api/v1/history/{id}/blocklist             add the release to the blocklist; 422 when the event has no release GUID
 
 GET    /api/v1/blocklist                          list blocked releases
 DELETE /api/v1/blocklist/{id}                     remove an entry

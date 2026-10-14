@@ -723,6 +723,7 @@
   },
   "history": {
     "title": "History",
+    "blocklistFailed": "Could not blocklist this release.",
     "allEventTypes": "All event types",
     "events": {
       "grabbed": "Grabbed",

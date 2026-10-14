@@ -204,6 +204,26 @@ describe('HistoryPage', () => {
     expect(within(desktopTable()).getByText('Keep Me')).toBeInTheDocument()
   })
 
+  it('keeps the row and shows the server message when blocklisting is refused', async () => {
+    const message = 'this history event has no release GUID, so there is nothing to blocklist'
+    vi.mocked(api.blocklistFromHistory).mockRejectedValue(new Error(message))
+    vi.mocked(api.listHistory).mockResolvedValue({
+      items: [makeHistory({ id: 7, eventType: 'grabbed', sourceTitle: 'No Guid Release' })],
+      total: 1,
+      limit: 100,
+      offset: 0,
+    })
+
+    renderHistoryPage()
+
+    const targetRow = (await within(await findDesktopTable()).findByText('No Guid Release')).closest('tr')!
+    fireEvent.click(within(targetRow).getByRole('button', { name: 'Blocklist' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(api.blocklistFromHistory).toHaveBeenCalledWith(7)
+    expect(within(desktopTable()).getByText('No Guid Release')).toBeInTheDocument()
+  })
+
   it('deletes history events and removes them from local history', async () => {
     vi.mocked(api.listHistory).mockResolvedValue({
       items: [

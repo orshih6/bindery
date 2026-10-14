@@ -99,6 +99,7 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState('')
+  const [toast, setToast] = useState<string | null>(null)
 
   const { page, pageSize, paginationProps, reset } = useServerPagination(total, 100, 'history')
 
@@ -128,6 +129,12 @@ export default function HistoryPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  useEffect(() => {
     document.title = 'History · Bindery'
     return () => { document.title = 'Bindery' }
   }, [])
@@ -145,8 +152,15 @@ export default function HistoryPage() {
     setTotal(prev => Math.max(0, prev - 1))
   }
 
+  // Unlike delete, blocklisting can be refused (an event with no release GUID
+  // has nothing to match), so keep the row and say why when it fails.
   const handleBlocklist = async (id: number) => {
-    await api.blocklistFromHistory(id).catch(console.error)
+    try {
+      await api.blocklistFromHistory(id)
+    } catch (err) {
+      setToast(err instanceof Error && err.message ? err.message : t('history.blocklistFailed'))
+      return
+    }
     setEvents(prev => prev.filter(e => e.id !== id))
     setTotal(prev => Math.max(0, prev - 1))
   }
@@ -155,6 +169,11 @@ export default function HistoryPage() {
 
   return (
     <div>
+      {toast && (
+        <div role="alert" className="fixed bottom-safe-6 right-safe-6 z-50 px-4 py-2.5 bg-red-600 text-white rounded-lg shadow-lg text-sm font-medium animate-fade-in">
+          {toast}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-2xl font-bold">{t('history.title')}</h2>
         <select
