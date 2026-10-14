@@ -74,6 +74,43 @@ func TestCheckEbookContent_MoreThanTheCapFailsOpenAndSaysSo(t *testing.T) {
 	}
 }
 
+// The boundary: exactly the cap is judged, one more is skipped and says so.
+func TestCheckEbookContent_CapBoundary(t *testing.T) {
+	write := func(f *contentFixture, n int) []string {
+		f.writeEpubTitled(t, "seed.epub", "Recursion", "Blake Crouch")
+		data, err := os.ReadFile(filepath.Join(f.dir, "seed.epub"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(filepath.Join(f.dir, "seed.epub"))
+		var paths []string
+		for i := 0; i < n; i++ {
+			p := filepath.Join(f.dir, fmt.Sprintf("c_%02d.epub", i))
+			if err := os.WriteFile(p, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			paths = append(paths, p)
+		}
+		return paths
+	}
+	f := newContentFixture(t, "The Racketeer", "John Grisham")
+	f.setMode(t, ebookCheckKey, "block")
+	res := f.scanner.checkEbookContent(context.Background(), f.book, f.author, write(f, maxContentCheckEpubReads))
+	if !res.flagged || res.data["truncated"] != nil {
+		t.Errorf("exactly %d EPUBs were not judged: %+v", maxContentCheckEpubReads, res)
+	}
+
+	f2 := newContentFixture(t, "The Racketeer", "John Grisham")
+	f2.setMode(t, ebookCheckKey, "block")
+	res = f2.scanner.checkEbookContent(context.Background(), f2.book, f2.author, write(f2, maxContentCheckEpubReads+1))
+	if res.flagged || res.blocks() {
+		t.Errorf("%d EPUBs were judged: %+v", maxContentCheckEpubReads+1, res)
+	}
+	if res.data["truncated"] != true || res.data["filesTotal"] != maxContentCheckEpubReads+1 {
+		t.Errorf("note = %v, want truncated with filesTotal %d", res.data, maxContentCheckEpubReads+1)
+	}
+}
+
 // 2. A non-Latin alias must not make an author unable to disagree.
 func TestEbookAuthorMatches_NonLatinAliasDoesNotHideALatinCreator(t *testing.T) {
 	names := []string{"Fyodor Dostoevsky", "Фёдор Достоевский"}

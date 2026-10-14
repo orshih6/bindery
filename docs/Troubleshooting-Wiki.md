@@ -88,6 +88,16 @@ inherits whatever that data gets wrong. Known limits:
   word and a digit are the same to the check.
 - **Hung network shares can exceed the budget**: a read already in flight is not
   interrupted, so the 30 second audiobook budget is checked between files.
+- **Publisher style creators that are not on the short list** (`Penguin Books`,
+  `Baen Books`, `DAW Books`, `Scholastic Press`, `Penguin Group USA`, `Pearson
+  Education`, `Pan Macmillan`, `Random House Audio`, `Harlequin`) are read as
+  authors. Only the explicit publisher list and the endings Inc, Ltd, LLC, GmbH,
+  Publishing, Publishers and Group count as no creator, so a wrong title with such
+  a creator can flag.
+- **Release group stamps in an audiobook album** such as `Downloaded from
+  rutracker.org` or `[example.com] Dune` can count as another title, because only
+  `www.`, a scheme, a word with two or more dots or a lone domain is read as a web
+  address.
 - **A release with more than 20 EPUBs** is not judged at all (the note says
   `truncated`), since a verdict on a prefix could condemn the right book.
 - **Short story and compilation titles** that are not worded as one (a single word
