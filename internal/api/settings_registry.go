@@ -224,6 +224,12 @@ var settingDescriptors = []SettingDescriptor{
 		State:       SettingStateActive,
 	},
 	{
+		Key: SettingImportAudiobookContentCheck, Type: SettingTypeEnum, Default: "warn",
+		Values:      contentCheckValues,
+		Description: "Read the audio tags of a downloaded audiobook and compare them with the book it was grabbed for. warn imports it and records the other books found on the History event and webhook, block refuses the download and blocklists the release, off skips the check and reads no tags. Match to book and manual import always skip it.",
+		State:       SettingStateActive,
+	},
+	{
 		Key: SettingImportAudiobookDropFolder, Type: SettingTypeString, Default: "",
 		Description: "Drop folder for audiobooks when their import mode is external. Must exist inside the container. Empty uses import.drop_folder.",
 		State:       SettingStateActive,

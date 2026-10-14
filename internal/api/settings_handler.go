@@ -235,7 +235,8 @@ const (
 // importer reads both keys as string literals to avoid an import cycle; keep the
 // literals in sync.
 const (
-	SettingImportEbookContentCheck = "import.ebook.content_check"
+	SettingImportEbookContentCheck     = "import.ebook.content_check"
+	SettingImportAudiobookContentCheck = "import.audiobook.content_check"
 )
 
 // contentCheckValues are the values the content check settings accept, in the
@@ -935,7 +936,7 @@ func validateSettingValue(key, value string) error {
 		if err != nil || n <= 0 {
 			return fmt.Errorf("import.drop_pair_gating_timeout_hours %q must be a positive integer number of hours", value)
 		}
-	case SettingImportEbookContentCheck:
+	case SettingImportEbookContentCheck, SettingImportAudiobookContentCheck:
 		return validateContentCheckValue(key, value)
 	case SettingImportMode, SettingImportAudiobookMode:
 		// Empty = auto for import.mode, "same as import.mode" for the

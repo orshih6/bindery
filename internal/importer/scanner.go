@@ -116,7 +116,10 @@ type Scanner struct {
 	// actually runs, with "ebook" or "audiobook". A test seam: it proves the
 	// check runs for a polled download and never for a library scan or a
 	// manual import.
-	onContentCheck       func(kind string)
+	onContentCheck func(kind string)
+	// readTags reads one audio file's tags for the audiobook content check;
+	// nil uses ReadAudioTags. A test seam that counts and bounds the reads.
+	readTags             func(path string) (AudioTags, error)
 	libraryDir           string
 	audiobookDir         string
 	audiobookDownloadDir string
@@ -1939,6 +1942,30 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 			}
 			return
 		}
+		// Post-download content check, audiobook half (#3246). The tags of the
+		// download's audio files are read once and compared with the book; a
+		// download that holds other works is refused in block mode (the same
+		// path as the ebook half and the language check) and noted on the
+		// bookImported event and webhook in warn mode, the default. It runs
+		// after the idempotency guard above, so a download that was already
+		// imported is not read again, and before any destination is computed
+		// or file placed. Skipped for a manual import, Match to book and a
+		// book matched from the file's own metadata. See content_check_audio.go.
+		if grabbedForBook && !isManualImport(ctx) {
+			if res := s.checkAudiobookContent(ctx, book, author, bookFiles); res.flagged {
+				if res.blocks() {
+					slog.Warn("import blocked: audio tags show other books in the download",
+						"title", dl.Title, "bookID", book.ID, "book", book.Title)
+					s.recordUnmatchedImportPath(ctx, dl.ID, downloadPath)
+					s.blocklistRejectedRelease(ctx, dl, res.reason)
+					s.failImportWithCheck(ctx, dl, models.StateImportBlocked, res.reason, res.data)
+					return
+				}
+				slog.Warn("downloaded audiobook holds other books; importing it because import.audiobook.content_check is warn",
+					"title", dl.Title, "bookID", book.ID, "book", book.Title)
+				contentCheck = res.data
+			}
+		}
 		// effectiveAudiobookDir resolves the per-author audiobook root folder
 		// (#579), then the default audiobook root folder setting (#2166), and
 		// falls back to BINDERY_AUDIOBOOK_DIR. It deliberately does NOT consult
@@ -2362,9 +2389,9 @@ func (s *Scanner) tryImportInternal(ctx context.Context, dl *models.Download, do
 			historyMeta["skippedFiles"] = strings.Join(mergeSkippedFiles, ", ")
 		}
 		s.fillCoverFromFile(ctx, book, destDir)
-		s.createHistoryEvent(ctx, models.HistoryEventBookImported, dl.Title, dl.BookID, historyMeta)
+		s.createHistoryEventData(ctx, models.HistoryEventBookImported, dl.Title, dl.BookID, withContentCheck(historyMeta, contentCheck))
 		s.recordFixMatchMove(ctx, book, destDir)
-		s.notify(ctx, notifierEventBookImported, importedPayload(book, dl, models.MediaTypeAudiobook, destDir, mergeSkippedFiles))
+		s.notify(ctx, notifierEventBookImported, withContentCheckPayload(importedPayload(book, dl, models.MediaTypeAudiobook, destDir, mergeSkippedFiles), contentCheck))
 		if cleanupFunc != nil {
 			if err := cleanupFunc(); err != nil {
 				slog.Warn("cleanup failed", cleanupWarnAttrs(cleanupClientType, cleanupRemoteID, err)...)

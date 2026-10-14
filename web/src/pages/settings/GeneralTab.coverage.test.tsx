@@ -167,6 +167,21 @@ describe('GeneralTab content check', () => {
     expect(await screen.findByTestId('import-ebook-content-check')).toHaveValue('off')
   })
 
+  it('defaults the audiobook content check to warn, independently of the ebook one, and saves a change', async () => {
+    seedSettings({ 'import.ebook.content_check': 'block' })
+    render(<GeneralTab />)
+
+    const select = await screen.findByTestId('import-audiobook-content-check')
+    expect(select).toHaveValue('warn')
+    expect(screen.getByTestId('import-ebook-content-check')).toHaveValue('block')
+    expect(within(select).getAllByRole('option').map(o => o.getAttribute('value'))).toEqual(['off', 'warn', 'block'])
+
+    fireEvent.change(select, { target: { value: 'block' } })
+    await waitFor(() => expect(m.setSetting).toHaveBeenCalledWith('import.audiobook.content_check', 'block'))
+    expect(select).toHaveValue('block')
+    expect(m.setSetting).not.toHaveBeenCalledWith('import.ebook.content_check', expect.anything())
+  })
+
   it('is not offered to a non admin', async () => {
     auth.isAdmin = false
     try {
@@ -174,6 +189,7 @@ describe('GeneralTab content check', () => {
       render(<GeneralTab />)
       await waitFor(() => expect(m.listSettings).toHaveBeenCalled())
       expect(screen.queryByTestId('import-ebook-content-check')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('import-audiobook-content-check')).not.toBeInTheDocument()
     } finally {
       auth.isAdmin = true
     }

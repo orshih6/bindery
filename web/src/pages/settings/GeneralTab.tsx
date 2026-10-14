@@ -421,6 +421,29 @@ export default function GeneralTab({ onNavigate }: GeneralTabProps = {}) {
               <option value="block">{t('settings.general.contentCheckBlock')}</option>
             </select>
           </div>
+          <div className="border-t border-slate-200 dark:border-zinc-800 pt-3">
+            <label htmlFor="import-audiobook-content-check" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1">
+              {t('settings.general.audiobookContentCheck')}
+            </label>
+            <p className="text-xs text-slate-600 dark:text-zinc-500 mb-2">
+              {t('settings.general.audiobookContentCheckHint')}
+            </p>
+            <select
+              id="import-audiobook-content-check"
+              data-testid="import-audiobook-content-check"
+              value={settings['import.audiobook.content_check'] || 'warn'}
+              onChange={async e => {
+                const v = e.target.value
+                setSettings(s => ({ ...s, 'import.audiobook.content_check': v }))
+                await api.setSetting('import.audiobook.content_check', v).catch(console.error)
+              }}
+              className={inputCls}
+            >
+              <option value="off">{t('settings.general.contentCheckOff')}</option>
+              <option value="warn">{t('settings.general.contentCheckWarn')}</option>
+              <option value="block">{t('settings.general.contentCheckBlock')}</option>
+            </select>
+          </div>
           {anyExternal && (
             <div className="border-t border-slate-200 dark:border-zinc-800 pt-3 space-y-3">
               {importMode === 'external' && (

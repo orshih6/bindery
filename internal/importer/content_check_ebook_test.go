@@ -37,6 +37,12 @@ type contentFixture struct {
 
 func newContentFixture(t *testing.T, bookTitle, authorName string) *contentFixture {
 	t.Helper()
+	return newContentFixtureFor(t, bookTitle, authorName, models.MediaTypeEbook)
+}
+
+// newContentFixtureFor is newContentFixture for a book of the given media type.
+func newContentFixtureFor(t *testing.T, bookTitle, authorName, mediaType string) *contentFixture {
+	t.Helper()
 	database, err := db.OpenMemory()
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +70,7 @@ func newContentFixture(t *testing.T, bookTitle, authorName string) *contentFixtu
 	book := &models.Book{
 		ForeignID: "OL-CC-B", AuthorID: author.ID, Title: bookTitle,
 		SortTitle: strings.ToLower(bookTitle), Status: models.BookStatusWanted, Monitored: true,
-		AnyEditionOK: true, MediaType: models.MediaTypeEbook, MetadataProvider: "openlibrary",
+		AnyEditionOK: true, MediaType: mediaType, MetadataProvider: "openlibrary",
 	}
 	if err := books.Create(ctx, book); err != nil {
 		t.Fatal(err)

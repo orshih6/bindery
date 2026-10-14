@@ -1458,6 +1458,8 @@
       "audiobookImportModeSame": "Same as ebooks",
       "ebookContentCheck": "Check ebook contents",
       "ebookContentCheckHint": "When an ebook download finishes, compare the EPUB's own title and author with the book it was grabbed for. Warn, the default, imports it and notes the mismatch on the History entry and in webhooks. Block refuses the download, blocklists the release and keeps the book Wanted. Off skips the check. Match to book and manual import always skip it.",
+      "audiobookContentCheck": "Check audiobook contents",
+      "audiobookContentCheckHint": "When an audiobook download finishes, read the audio tags of its files and compare them with the book it was grabbed for. Warn, the default, imports it and lists the other books found on the History entry and in webhooks. Block refuses the download, blocklists the release and keeps the book Wanted. Off skips the check and reads no tags. Match to book and manual import always skip it.",
       "contentCheckOff": "Off",
       "contentCheckWarn": "Warn (import and note it)",
       "contentCheckBlock": "Block (refuse the download)",

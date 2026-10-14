@@ -8,7 +8,7 @@ import (
 // The content check settings (#3015, #3246) default to warn, offer exactly off,
 // warn and block, and only an admin may read or write them.
 func TestContentCheckSettingDescriptors(t *testing.T) {
-	for _, key := range []string{SettingImportEbookContentCheck} {
+	for _, key := range []string{SettingImportEbookContentCheck, SettingImportAudiobookContentCheck} {
 		var found *SettingDescriptor
 		for _, d := range SettingDescriptors() {
 			if d.Key == key {
@@ -43,7 +43,7 @@ func TestContentCheckSettingDescriptors(t *testing.T) {
 // A non admin must not be able to read the settings, and nothing about them is
 // on the list a non admin screen reads.
 func TestContentCheckSettingsAreNotNonAdminReadable(t *testing.T) {
-	for _, key := range []string{SettingImportEbookContentCheck} {
+	for _, key := range []string{SettingImportEbookContentCheck, SettingImportAudiobookContentCheck} {
 		if !isAdminOnlySetting(key) {
 			t.Errorf("%s is not admin only", key)
 		}

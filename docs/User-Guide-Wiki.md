@@ -386,6 +386,9 @@ set, an omnibus, a "complete series". They still appear in interactive search
 so you can see them, and if you grab one by hand the import is blocked with an
 explanation rather than run. To take a pack, point **Import → From a folder** at the
 finished download and place each book's files against the right book record.
+A release that is not named as a pack can still hold several books. The name
+check cannot see that, but the content check on the finished download can (see
+below).
 
 A release is only judged a pack on wording that single books do not use about
 themselves. `Part 1-2` is left alone, because that is how one long audiobook
@@ -544,6 +547,50 @@ mismatch. The check only runs for downloads Bindery grabbed for a book. A librar
 scan, manual import, **Match to book** and a download matched to its book from
 the file's own metadata are never checked, and only EPUB is read. Bindery does not
 read the book's text and does not write anything into the file.
+
+**The files' audio tags are checked at import (audiobooks).** An audiobook
+download is imported whole under the book it was grabbed for, so a release named
+for the right book that also holds the tracks of other books (the next volume,
+or another title by the same author) used to import all of them. When the
+download finishes, Bindery reads the tags of its audio files, once, and works
+out which book each file says it belongs to: its album tag, or, only when a file
+has no album, its track title, and then only when at least two files share it,
+so unique chapter names are never taken for other books. Titles such as
+`Chapter 12`, `Track 03`, a bare number, `Prologue`, `Credits`, and promo
+material (`Excerpt from ...`, preview, sample, bonus, interview, `Also by`,
+teaser, trailer) say nothing about the book and are ignored, and so is a file
+with no usable title.
+
+A file supports the book when its title equals the book's title (series suffix,
+subtitle, `(Volume 1)` style qualifier, leading article, `&` against `and`,
+case and accents all ignored) or contains it as whole words, so a short title
+like `Dune` is supported by `Dune Messiah`. A file that carries another volume
+of the same series (`NYPD Red 4` for `NYPD Red 3`) does not. The download is
+flagged when either at least two files do not support the book and at least one
+does or at least two different other titles appear, or at least two files carry
+another volume of the book's own series. A download where every file carries one
+other title is not flagged, because that is what a translated or retitled
+edition looks like. A wanted box set, omnibus, collection or anthology is not
+compared. At most 500 files are read, spread across the folder, so the cost of
+an import does not grow with the size of the download.
+
+The setting is **Check audiobook contents** next to the ebook one
+(`import.audiobook.content_check`, admin only) and works the same way:
+
+- **Warn** (the default): the audiobook imports as before, and the History row
+  and the `bookImported` webhook carry a `contentCheck` object with the number
+  of tracks read, how many support the book, and the other books found with how
+  many files each (up to ten).
+- **Block**: the download is blocked with a message such as `the files contain
+  Corralled (9), Coming Home to Myself (8), but the book is "Chase" (2 of 19
+  tracks match)`, the release is blocklisted, nothing is attached and the book
+  stays Wanted. **Match to book** or manual import keeps the folder anyway and
+  skips the check, and **Retry import** runs it again.
+- **Off**: no tag is read.
+
+Like the ebook check it applies only to downloads grabbed for a book, never to
+a library scan, manual import or **Match to book**, and it does not change the
+files or their tags.
 
 If the library app downstream reads sidecar metadata, turn on **Write a
 metadata.opf sidecar** in Settings → General (off by default). Bindery then

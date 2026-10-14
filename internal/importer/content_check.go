@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/vavallee/bindery/internal/db"
@@ -98,11 +99,17 @@ type contentCheckResult struct {
 // blocks reports whether the result refuses the download.
 func (r contentCheckResult) blocks() bool { return r.flagged && r.mode == contentCheckBlock }
 
-// bookIsCompilation reports whether a wanted book is a box set, omnibus or pack.
-// Its files legitimately carry the titles of other works, so there is nothing to
-// compare.
+// compilationWordRe matches the words a compilation names itself with that the
+// catalogue's bundle detection does not treat as a bundle on its own: "The
+// Complete Sherlock Holmes", "Collected Stories", "An Anthology", "Best of Poe".
+var compilationWordRe = regexp.MustCompile(`(?i)\b(?:complete|collected|anthology|anthologies|collection|collections|omnibus|treasury|best of|short stories)\b`)
+
+// bookIsCompilation reports whether a wanted book is a box set, omnibus,
+// anthology or pack. Its files legitimately carry the titles of other works, so
+// there is nothing to compare. Skipping on a word too many only costs a missed
+// mismatch, which is the safe direction.
 func bookIsCompilation(title string) bool {
-	return metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != ""
+	return metadata.IsBundleTitle(title) || indexer.MultiBookPackMarker(title) != "" || compilationWordRe.MatchString(title)
 }
 
 // splitCreators breaks a dc:creator string that credits several people into one

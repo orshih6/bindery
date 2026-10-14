@@ -14,8 +14,10 @@ inspect the release's title and author rather than relying only on shared words.
 
 These checks use the release name. They do not open the download. A separate
 check does, once the download has finished: Bindery compares an EPUB's own title
-and author with the book it was grabbed for. It is set under Settings, General,
-File Naming (`import.ebook.content_check`), defaults to
+and author with the book it was grabbed for, and for an audiobook compares the
+audio tags of its files with the book. It is set per format under Settings,
+General, File Naming (`import.ebook.content_check` and
+`import.audiobook.content_check`), defaults to
 `warn`, which imports the file and records what it found on the History row and
 in webhooks as `contentCheck`, and only refuses a download in `block` mode. See
 [the User Guide](User-Guide-Wiki.md) for what counts as a mismatch. Nothing
@@ -25,17 +27,23 @@ replacement for the original.
 
 ### An import was blocked because the file looks like a different book
 
-The message names what the file says and what the book is, for example `the
-file says it is "Mary and Mr Eliot: A Sort of Love Story" by Mary Trevelyan, but
-the book is "Mary, Mary: Alex Cross, Book 11" by James Patterson`. The release is
-already on the Blocklist and the book is still Wanted, so the next search picks
-another release.
+The message names what was found and what the book is. For an ebook, for example
+`the file says it is "Mary and Mr Eliot: A Sort of Love Story" by Mary Trevelyan,
+but the book is "Mary, Mary: Alex Cross, Book 11" by James Patterson`. For an
+audiobook, `the files contain Corralled (9), Coming Home to Myself (8), but the
+book is "Chase" (2 of 19 tracks match)`, with the number of files in brackets.
+The release is already on the Blocklist and the book is still Wanted, so the
+next search picks another release.
 
 - **The file really is the book** (a mislabelled or foreign language edition, a
-  file whose metadata is wrong): use **Match to book** on the Queue row. That
-  keeps the file and skips the check.
-- **The author is a pen name**: add it as an alias on the author, and **Retry
-  import** will accept the file.
+  file whose metadata or tags are wrong): use **Match to book** on the Queue row.
+  That keeps the file and skips the check.
+- **The author is a pen name** (ebooks): add it as an alias on the author, and
+  **Retry import** will accept the file.
+- **An audiobook is the right book but its tags disagree with each other** (some
+  files carry a retitled or regional album name): use **Match to book**. A
+  folder whose every file carries the same other title is not blocked, since
+  that is what a translated edition looks like.
 - **You would rather be warned than blocked**: set the check to `warn`. The
   import goes ahead and the History row shows what was found.
 

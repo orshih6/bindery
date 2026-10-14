@@ -316,6 +316,13 @@ func TestValidateSettingValue_KnownKeysUnchanged(t *testing.T) {
 		{"pair gating timeout rejects zero", SettingImportDropPairGatingTimeoutHours, "0", true},
 		{"pair gating timeout rejects text", SettingImportDropPairGatingTimeoutHours, "soon", true},
 
+		{"audiobook content check accepts off", SettingImportAudiobookContentCheck, "off", false},
+		{"audiobook content check accepts warn", SettingImportAudiobookContentCheck, "warn", false},
+		{"audiobook content check accepts block", SettingImportAudiobookContentCheck, "block", false},
+		{"audiobook content check accepts empty (default warn)", SettingImportAudiobookContentCheck, "", false},
+		{"audiobook content check rejects a typo", SettingImportAudiobookContentCheck, "blok", true},
+		{"audiobook content check rejects skip, which is not offered", SettingImportAudiobookContentCheck, "skip", true},
+
 		{"ebook content check accepts off", SettingImportEbookContentCheck, "off", false},
 		{"ebook content check accepts warn", SettingImportEbookContentCheck, "warn", false},
 		{"ebook content check accepts block", SettingImportEbookContentCheck, "block", false},
@@ -476,6 +483,7 @@ var webSettingKeys = []string{
 	"hardcover.api_token",
 	"hardcover.enhanced_series_enabled",
 	"hardcover.sync_interval",
+	"import.audiobook.content_check",
 	"import.audiobook.drop_folder",
 	"import.audiobook.flatten_multi_disc",
 	"import.audiobook.mode",

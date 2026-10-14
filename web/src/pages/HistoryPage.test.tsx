@@ -362,6 +362,44 @@ describe('HistoryPage', () => {
     expect(within(legacyRow).getByText('/library/Author/Legacy.epub')).toBeInTheDocument()
   })
 
+  it('lists the other books a warn mode content check found in an audiobook import (#3246)', async () => {
+    vi.mocked(api.listHistory).mockResolvedValue({
+      items: [
+        makeHistory({
+          id: 1,
+          eventType: 'bookImported',
+          sourceTitle: 'Chase Audiobook',
+          data: JSON.stringify({
+            path: '/audiobooks/Chase',
+            format: 'audiobook',
+            contentCheck: {
+              kind: 'audiobook',
+              bookTitle: 'Chase',
+              tracksRead: 19,
+              matches: 2,
+              mismatches: [
+                { title: 'Corralled', count: 9 },
+                { title: 'Coming Home to Myself', count: 8 },
+              ],
+            },
+          }),
+        }),
+      ],
+      total: 1,
+      limit: 100,
+      offset: 0,
+    })
+
+    renderHistoryPage()
+    const table = await findDesktopTable()
+    expect(await within(table).findByText('Chase Audiobook')).toBeInTheDocument()
+    expect(
+      within(rowFor('Chase Audiobook')).getByText(
+        'The files include other books: Corralled (9), Coming Home to Myself (8) · /audiobooks/Chase',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('says what a warn mode content check found on an ebook import (#3015)', async () => {
     vi.mocked(api.listHistory).mockResolvedValue({
       items: [
