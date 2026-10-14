@@ -782,6 +782,37 @@ Scheduled jobs can run again on their next scheduled pass. This does not add
 automatic edition-hydration recovery or request accounting.
 Different tokens have separate holds, even if they belong to the same account.
 
+### Hardcover request volume of the author profile refresh
+
+The scheduled author profile refresh asks the metadata provider for one author
+profile per author. It runs as an hourly tick that refreshes only the authors
+whose profile is missing or older than 24 hours, stalest first, and records the
+time on each author after a successful refresh. Each author is therefore asked
+about roughly once a day, spread over the day instead of in one nightly burst.
+It refreshes profiles only; catalogue discovery, series refresh and edition
+hydration are separate jobs with their own request costs.
+
+A tick refreshes `ceil(authors / 24)` authors, at most 100, three seconds apart.
+For authors whose primary provider is Hardcover, the steady daily cost is one
+request per author:
+
+| Authors on Hardcover | Per tick | Requests per day | Free (5,000 per day) | Supporter (50,000 per day) |
+|---|---|---|---|---|
+| 250 | 11 | 250 | 5% | 0.5% |
+| 1,000 | 42 | 1,000 | 20% | 2% |
+| 2,400 | 100 | 2,400 | 48% | 4.8% |
+| 5,000 | 100 | about 2,400 (each author about every 50 hours) | 48% | 4.8% |
+
+The daily total matches the old nightly job, which also spent one request per
+author, so staggering does not lower it. What changes is how it is spent: a
+restart, an explicit refresh or a quota hold no longer costs a second full
+pass, because an author refreshed within the last 24 hours is skipped. A held
+daily quota or a rate limit stops the tick and leaves the remaining authors
+stale, and the next hourly tick resumes with the same authors. Authors on
+other providers cost no Hardcover requests. An explicit **Refresh Metadata** on
+one author is never delayed by this schedule and counts as that author's
+refresh for the day. See [#2595](https://github.com/vavallee/bindery/issues/2595).
+
 ### Hardcover rejected token pause
 
 When Hardcover answers a request with a JSON 401 (a 401 page that is HTML or plain
