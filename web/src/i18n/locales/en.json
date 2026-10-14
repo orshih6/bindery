@@ -1230,6 +1230,20 @@
       "credentialKeepHint": "Bindery no longer sends a saved password or API key back to the browser. Leave this blank to keep the one already stored.",
       "credentialUnsetHint": "No credential is stored for this client yet.",
       "unknownError": "Unknown error",
+      "remapAssist": {
+        "heading": "Suggest a path remap",
+        "intro": "Bindery can't see the folder the client writes to. If the client and Bindery share the same storage under different paths, pick the folder where Bindery sees it.",
+        "clientPath": "The client writes to",
+        "chooseLabel": "Bindery sees that storage at",
+        "source": {
+          "downloadDir": "download folder",
+          "library": "library folder"
+        },
+        "previewLabel": "Preview",
+        "apply": "Apply this remap",
+        "applying": "Applying...",
+        "failed": "Could not save the remap: {{error}}"
+      },
       "diagnose": {
         "button": "Diagnose",
         "running": "Diagnosing…",

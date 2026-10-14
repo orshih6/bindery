@@ -39,6 +39,25 @@ export function rtorrentScgiIgnoredFields(
   return ignored
 }
 
+// Client types the server can seed a path remap for (a fixed completed folder
+// it can read). Mirrors downloader.SupportsRemapAssistant; the server only
+// sends candidates for these, and every other type shows no assistant (#2031).
+const REMAP_ASSISTED_TYPES = ['qbittorrent', 'nzbget', 'rtorrent']
+
+export function supportsRemapAssistant(type: string): boolean {
+  return REMAP_ASSISTED_TYPES.includes(type)
+}
+
+// addRemapRule appends remote:local to an existing remap, keeping the rules the
+// client already has (the longest prefix wins, so order does not matter) and
+// not repeating one that is already there.
+export function addRemapRule(existing: string, remote: string, local: string): string {
+  const rule = `${remote}:${local}`
+  const rules = existing.split(',').map(r => r.trim()).filter(Boolean)
+  if (!rules.includes(rule)) rules.push(rule)
+  return rules.join(',')
+}
+
 // downloadClientPathRemapHelp returns the help text for the path-remap field
 // of a given download-client type.
 export function downloadClientPathRemapHelp(type: string) {

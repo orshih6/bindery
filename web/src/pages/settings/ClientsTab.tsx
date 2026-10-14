@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { api, DiagnoseResult, DownloadClient, DownloadClientUpdate } from '../../api/client'
+import { api, DiagnoseResult, DownloadClient, DownloadClientUpdate, RemapCandidate } from '../../api/client'
 import { inputCls } from './formStyles'
 import Toggle from './Toggle'
 import PathRemapField from './PathRemapField'
-import { downloadClientPathRemapHelp, rtorrentScgiIgnoredFields } from './helpers'
+import { addRemapRule, downloadClientPathRemapHelp, rtorrentScgiIgnoredFields, supportsRemapAssistant } from './helpers'
 import { dangerLink } from '../../components/buttons'
 import ClientDiagnosePanel from './ClientDiagnosePanel'
+import RemapAssistant from './RemapAssistant'
 import { literalInputAttrs, portInputAttrs, secretInputAttrs, urlInputAttrs } from '../../util/inputAttrs'
 
 // clients is owned by SettingsPage so it can be fetched eagerly on page mount
@@ -31,7 +32,7 @@ export default function ClientsTab({ clients, setClients }: Props) {
   const { t } = useTranslation()
   const [showAddClient, setShowAddClient] = useState(false)
   const [editingClient, setEditingClient] = useState<number | null>(null)
-  const [clientTestResult, setClientTestResult] = useState<Record<number, { ok: boolean; msg: string; warn?: string }>>({})
+  const [clientTestResult, setClientTestResult] = useState<Record<number, { ok: boolean; msg: string; warn?: string; assist?: { remotePath: string; candidates: RemapCandidate[] } }>>({})
   const [confirmDeleteClient, setConfirmDeleteClient] = useState<number | null>(null)
   // Diagnose runs only for a saved client (it takes the id, never a form).
   const [diagnosing, setDiagnosing] = useState<number | null>(null)
@@ -50,7 +51,36 @@ export default function ClientsTab({ clients, setClients }: Props) {
     }
   }
 
-  const closeDiagnosis = (id: number) => setDiagnosis(prev => {
+  const runTest = async (c: DownloadClient) => {
+    try {
+      const result = await api.testDownloadClient(c.id)
+      if (result.health) {
+        setClients(prev => prev.map(x => x.id === c.id ? { ...x, health: result.health } : x))
+      }
+      const warn = result.pathVisibility?.status === 'warning'
+        ? (result.pathVisibility.message || t('settings.clients.pathNotVisible'))
+        : undefined
+      const remotePath = result.pathVisibility?.remotePath
+      const assist = warn && remotePath && result.remapCandidates?.length
+        ? { remotePath, candidates: result.remapCandidates }
+        : undefined
+      setClientTestResult(prev => ({ ...prev, [c.id]: { ok: true, msg: t('common.connOk'), warn, assist } }))
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err.message : t('settings.clients.unknownError')
+      const warn = isLoopbackConnFailure(c.host, error) ? t('settings.clients.loopbackHint') : undefined
+      setClientTestResult(prev => ({ ...prev, [c.id]: { ok: false, msg: t('common.connFail', { error }), warn } }))
+    }
+  }
+
+  // The assistant's save is the ordinary update call with the one field changed
+  // (the diagnostic response is never replayed), followed by a fresh Test.
+  const applyRemap = async (c: DownloadClient, remotePath: string, local: string) => {
+    const updated = await api.updateDownloadClient(c.id, { ...c, pathRemap: addRemapRule(c.pathRemap || '', remotePath, local) })
+    setClients(prev => prev.map(x => x.id === updated.id ? updated : x))
+    await runTest(updated)
+  }
+
+  const closeDiagnosis =(id: number) => setDiagnosis(prev => {
     const next = { ...prev }
     delete next[id]
     return next
@@ -88,22 +118,7 @@ export default function ClientsTab({ clients, setClients }: Props) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <button onClick={() => setEditingClient(editingClient === c.id ? null : c.id)} className="text-xs text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white">{t('common.edit')}</button>
                   <button
-                    onClick={async () => {
-                      try {
-                        const result = await api.testDownloadClient(c.id)
-                        if (result.health) {
-                          setClients(prev => prev.map(x => x.id === c.id ? { ...x, health: result.health } : x))
-                        }
-                        const warn = result.pathVisibility?.status === 'warning'
-                          ? (result.pathVisibility.message || t('settings.clients.pathNotVisible'))
-                          : undefined
-                        setClientTestResult(prev => ({ ...prev, [c.id]: { ok: true, msg: t('common.connOk'), warn } }))
-                      } catch (err: unknown) {
-                        const error = err instanceof Error ? err.message : t('settings.clients.unknownError')
-                        const warn = isLoopbackConnFailure(c.host, error) ? t('settings.clients.loopbackHint') : undefined
-                        setClientTestResult(prev => ({ ...prev, [c.id]: { ok: false, msg: t('common.connFail', { error }), warn } }))
-                      }
-                    }}
+                    onClick={() => { void runTest(c) }}
                     className="text-xs text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
                   >
                     {t('common.test')}
@@ -168,6 +183,16 @@ export default function ClientsTab({ clients, setClients }: Props) {
                   <span className="inline-block w-2 h-2 mt-1 rounded-full flex-shrink-0 bg-amber-500" />
                   {clientTestResult[c.id].warn}
                 </div>
+              )}
+              {clientTestResult[c.id]?.assist && supportsRemapAssistant(c.type) && (
+                <RemapAssistant
+                  key={clientTestResult[c.id].assist!.remotePath}
+                  clientId={c.id}
+                  clientType={c.type}
+                  remotePath={clientTestResult[c.id].assist!.remotePath}
+                  candidates={clientTestResult[c.id].assist!.candidates}
+                  onApply={local => applyRemap(c, clientTestResult[c.id].assist!.remotePath, local)}
+                />
               )}
               {diagnosis[c.id]?.error && (
                 <div role="alert" className="mt-1 px-3 py-1.5 rounded text-xs flex items-center gap-2 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">

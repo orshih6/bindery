@@ -472,15 +472,39 @@ func (h *DownloadClientHandler) Test(w http.ResponseWriter, r *http.Request) {
 	health := h.refreshClientHealth(r.Context(), client)
 	pathVis := downloader.CheckCompletedPathVisibility(r.Context(), client, h.downloadDir, h.audiobookDownloadDir, h.downloadPathRemap)
 	resp := struct {
-		Message        string                       `json:"message"`
-		Health         *models.DownloadClientHealth `json:"health,omitempty"`
-		PathVisibility *downloader.PathVisibility   `json:"pathVisibility,omitempty"`
+		Message         string                       `json:"message"`
+		Health          *models.DownloadClientHealth `json:"health,omitempty"`
+		PathVisibility  *downloader.PathVisibility   `json:"pathVisibility,omitempty"`
+		RemapCandidates []downloader.RemapCandidate  `json:"remapCandidates,omitempty"`
 	}{
-		Message:        "Connection verified",
-		Health:         health,
-		PathVisibility: pathVisibilityForResponse(pathVis),
+		Message:         "Connection verified",
+		Health:          health,
+		PathVisibility:  pathVisibilityForResponse(pathVis),
+		RemapCandidates: h.remapCandidates(r.Context(), client, pathVis),
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// remapCandidates offers Bindery's own folders as the right hand side of a path
+// remap (#2031), only when the client's folder is not visible and the client
+// type reports one. The route is admin only like the rest of the download
+// client surface, because the folders are the operator's own configuration.
+//
+// Read only by construction: it returns folders and a previewed join, never a
+// remap string, and writes nothing. The UI saves a remap through the normal
+// update route.
+func (h *DownloadClientHandler) remapCandidates(ctx context.Context, client *models.DownloadClient, vis downloader.PathVisibility) []downloader.RemapCandidate {
+	if vis.Status != downloader.PathNotVisible || vis.RemotePath == "" {
+		return nil
+	}
+	roots := []downloader.RemapRoot{
+		{Path: h.downloadDir, Source: downloader.RemapSourceDownloadDir},
+		{Path: h.audiobookDownloadDir, Source: downloader.RemapSourceDownloadDir},
+	}
+	for _, p := range h.roots.Configured(ctx) {
+		roots = append(roots, downloader.RemapRoot{Path: p, Source: downloader.RemapSourceLibrary})
+	}
+	return downloader.RemapCandidates(client.Type, vis.RemotePath, roots)
 }
 
 // pathVisibilityForResponse returns the path-visibility result for the Test
