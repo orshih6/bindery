@@ -31,7 +31,8 @@ Two things drop it:
   and never drops a release: `Title 12 files`, `Title 4 mp3`, `Title 24 bit`,
   `Title 3 Tapes`, `Title 2 vols`, `Title 2 CD`, `64 kbps`, `12 hours`. A
   capital roman numeral from `II` to `XXX` counts as a number in the same
-  places (`Mistborn III` at position 2 is dropped). A lone `I` is never read,
+  places (`Mistborn III` at position 2 is dropped). A lone `I`, `V` or `X` is
+  never read (they are the pronoun and author initials, as in `V. E. Schwab`),
   lowercase is never read, and nothing is read after a wanted title that itself
   ends in a roman numeral (`Henry V`, `Rocky II`).
 - **Another of the author's titles.** If one of the author's other books in your
@@ -46,7 +47,11 @@ Two things drop it:
   Messiah` for `Dune`), or when the wanted title contains it. A library title
   that is directly followed by a number, or by a marker word and a number
   (`Rotten School 12`, `The Dark Tower 1`, `Rotten School Book 12`), is a series
-  label and not another book, even when the wanted book has no series link.
+  label and not another book, even when the wanted book has no series link. So
+  is one inside brackets or parentheses (`(The Dark Tower)`), one followed by a
+  series word (`The Dark Tower Series`, Trilogy, Saga, Cycle, Chronicles), and
+  one followed by a capital roman numeral (`The Dark Tower III`). A number of
+  four digits is a year, not a label.
 
 Numbers that are not series numbers never drop a release: `01` (the first book),
 `Part 1 of 2` and `Book 2 of the Stormlight Archive` (a number followed by
@@ -123,9 +128,18 @@ and three more:
 The limit: with no series position, no library title that matches the main
 title, and no full title among the results, a lone `Legion (2012)` is still
 approved for `Legion: Skin Deep`. Nothing in the release or the library says
-otherwise, and Bindery drops releases only on positive evidence. Setting the
-book's series position, or having the main title's own book in your library,
-turns the rule on.
+otherwise, and Bindery drops releases only on positive evidence. Having the
+main title's own book in your library turns the rule on.
+
+Two more limits. A subtitle that numbers the book 2 or more (`Dune: Part Two`)
+drops a release only when the release names a different number (`Dune III`);
+the plain `Dune (Unabridged) MP3` is kept, the same as the plain release of
+`Foundation and Empire: Book Two`. That number is read with the same count guard
+as above, so `64 kbps` or `24 bit` is not a different number. And when the
+book's series is linked, a library entry that carries the series name is not
+read as "another book": `Frank Herbert - Dune (epub)` is approved for the wanted
+`Dune: Messiah` at position 2 when the series is `Dune Chronicles` and the
+library holds `Dune`.
 
 ### A search result is one chapter of an audiobook
 

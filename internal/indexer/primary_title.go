@@ -99,7 +99,7 @@ func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string,
 	want := 0
 	if si.seriesLike {
 		want = si.n
-		nums := numbersAfter(raw, n, primary...)
+		nums := numbersAfter(raw, n, true, primary...)
 		if len(nums) > 0 && !containsInt(nums, want) {
 			return reasonMainTitleOnlySequel
 		}
@@ -112,7 +112,7 @@ func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string,
 			if want == 0 && tr.posKnown && tr.posLo == tr.posHi {
 				want = tr.posLo
 			}
-			if want > 0 && containsInt(numbersAfter(raw, n, primary...), want) {
+			if want > 0 && containsInt(numbersAfter(raw, n, false, primary...), want) {
 				return ""
 			}
 			return reasonMainTitleOnlySequel

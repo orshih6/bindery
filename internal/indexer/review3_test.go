@@ -179,7 +179,7 @@ func TestRuleAIgnoresNumberOne(t *testing.T) {
 func TestNumbersAfterRomanRules(t *testing.T) {
 	ident := titleIdentityKeywords("Dune")
 	read := func(raw string) []int {
-		return numbersAfter(raw, NormalizeRelease(raw), ident)
+		return numbersAfter(raw, NormalizeRelease(raw), false, ident)
 	}
 	if got := read("Dune XXX"); len(got) != 1 || got[0] != 30 {
 		t.Errorf("XXX = %v, want [30]", got)

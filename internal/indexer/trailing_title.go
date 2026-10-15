@@ -427,13 +427,50 @@ var (
 	}
 )
 
+// readableRoman returns the value of a capital roman numeral that may be read
+// as a series number: II to XXX and I..XXX minus the letters that are far more
+// often an initial or a word. A lone I (the pronoun), V and X (author
+// initials: "V. E. Schwab", "X. Y. Smith") are never read; lowercase is never
+// read; nothing above XXX is read (L, C, D and M alone are 50 and up).
+func readableRoman(raw string) (int, bool) {
+	if raw == "" || raw != strings.ToUpper(raw) || !romanRe.MatchString(raw) {
+		return 0, false
+	}
+	switch raw {
+	case "I", "V", "X":
+		return 0, false
+	}
+	v := romanValue(raw)
+	return v, v >= 1 && v <= 30
+}
+
+// standsAsNumber reports whether the number token at toks[i] is a number and
+// not a count of something: it ends the name, is followed by punctuation, or
+// sits behind a marker word or a hash. "of" and another number after it never
+// make it one. This is signal A's clause set.
+func standsAsNumber(toks []relTok, i int, viaMarker bool) bool {
+	if i+1 >= len(toks) {
+		return true
+	}
+	next := toks[i+1]
+	if next.text == "of" || isAllDigits(next.text) {
+		return false
+	}
+	return viaMarker || strings.Contains(toks[i].sep, "#") || punctBefore(next)
+}
+
 // numbersAfter reads the series numbers named directly after the wanted title:
-// digits ("2", "02"), a roman numeral in capitals ("II"), a number word after
-// a marker ("Book Two"), and a season token ("S1"), behind any run of marker
-// words ("Series 02", "S1 Part 2"). The scan stops at the first token that is
-// none of these or after a plain number. It is used to keep a release, never
-// to reject one.
-func numbersAfter(raw, n string, idents ...[]string) []int {
+// digits ("2", "02"), a roman numeral in capitals ("II", see readableRoman), a
+// number word after a marker ("Book Two"), and a season token ("S1"), behind
+// any run of marker words ("Series 02", "S1 Part 2"). The scan stops at the
+// first token that is none of these or after a plain number.
+//
+// Two uses. Read for equality, to KEEP a release that carries the wanted number
+// in any spelling, it is lenient (guarded false). Read to REJECT a release that
+// names a different number it is guarded: a digit number followed by an ordinary
+// word ("64 kbps", "24 bit", "12 files") is a count and is not read, as in
+// signal A.
+func numbersAfter(raw, n string, guarded bool, idents ...[]string) []int {
 	toks, k, found := locateTitle(raw, n, idents...)
 	if !found {
 		return nil
@@ -442,6 +479,7 @@ func numbersAfter(raw, n string, idents ...[]string) []int {
 	afterMarker := false
 	for i := k; i < len(toks); i++ {
 		t := toks[i]
+		roman, isRoman := readableRoman(t.raw)
 		switch {
 		case readMarkers[t.text]:
 			afterMarker = true
@@ -450,10 +488,14 @@ func numbersAfter(raw, n string, idents ...[]string) []int {
 			out = append(out, v)
 			afterMarker = true
 		case len(t.text) <= 2 && isAllDigits(t.text):
+			if guarded && !standsAsNumber(toks, i, afterMarker) {
+				return out
+			}
 			v, _ := strconv.Atoi(t.text)
 			return append(out, v)
-		case t.raw == strings.ToUpper(t.raw) && romanRe.MatchString(t.raw) && romanValue(t.raw) >= 1 && romanValue(t.raw) <= 30:
-			return append(out, romanValue(t.raw))
+		case isRoman:
+			// A capital roman numeral is never a count, so it is not guarded.
+			return append(out, roman)
 		case afterMarker && numberWords[t.text] > 0:
 			return append(out, numberWords[t.text])
 		default:
@@ -482,10 +524,11 @@ func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
 	switch {
 	case len(num.text) <= 2 && isAllDigits(num.text):
 		n, _ = strconv.Atoi(num.text)
-	case !tr.wantedEndsRoman && num.raw != "I" && num.raw == strings.ToUpper(num.raw) && romanRe.MatchString(num.raw):
-		// A capital roman numeral II to XXX. A lone "I" is the pronoun, and a
-		// title that itself ends in one ("Henry V") is not read this way.
-		if v := romanValue(num.raw); v >= 2 && v <= 30 {
+	case !tr.wantedEndsRoman:
+		// A capital roman numeral II to XXX (see readableRoman: never a lone
+		// I, V or X). A title that itself ends in one ("Henry V") is not read
+		// this way.
+		if v, ok := readableRoman(num.raw); ok {
 			n = v
 		}
 	}
@@ -532,12 +575,12 @@ func (tr *trailingRules) otherTitleIn(rest []relTok) string {
 		if !present {
 			continue
 		}
-		// A library title directly followed by a number, or by a marker word
-		// and a number, is a series label ("Rotten School 12", "The Dark
-		// Tower 1"), not another book. Another book is any occurrence that is
-		// not followed by one.
+		// Another book is any occurrence that is not a series label (see
+		// seriesLabel). One real occurrence is enough.
 		for _, loc := range phraseRegex(ot.ident).FindAllStringIndex(haystack, -1) {
-			if !seriesLabelFollows(haystack[loc[1]:]) {
+			start := len(strings.Fields(haystack[:loc[0]]))
+			end := len(strings.Fields(haystack[:loc[1]]))
+			if !seriesLabel(rest, start, end) {
 				return reasonAnotherTitle
 			}
 		}
@@ -545,19 +588,45 @@ func (tr *trailingRules) otherTitleIn(rest []relTok) string {
 	return ""
 }
 
-// seriesLabelFollows reports whether the text starts with a series number: a
-// number, or a marker word and a number or number word. A different book whose
-// title really ends with a number is read as a label too; that is a known limit.
-func seriesLabelFollows(after string) bool {
-	f := strings.Fields(after)
-	if len(f) == 0 {
+// seriesWords are the words after a series name that say it is a series.
+var seriesWords = map[string]bool{
+	"series": true, "trilogy": true, "saga": true, "cycle": true, "chronicles": true,
+	"quartet": true, "quintet": true, "duology": true, "tetralogy": true,
+}
+
+// seriesLabel reports whether the library title at rest[start:end] is used as a
+// series label and not as another book: it sits inside brackets or
+// parentheses; or it is followed by a series word ("The Dark Tower Series"), a
+// number ("Rotten School 12"; three digits at most, so a year is not one), a
+// marker word and a number or number word ("Rotten School Book 12"), or a
+// capital roman numeral ("The Dark Tower III"). A different book whose title
+// really ends with a number, or is written in brackets, is read as a label too;
+// that is a known limit.
+func seriesLabel(rest []relTok, start, end int) bool {
+	// An opening bracket may sit before an article that belongs to the title
+	// ("(The Dark Tower)"), so look back over insignificant words too.
+	for i := start; i < len(rest); {
+		if strings.ContainsAny(rest[i].sep, "([{") {
+			return true
+		}
+		if i == 0 || len(newznab.SigWords(rest[i-1].text)) != 0 {
+			break
+		}
+		i--
+	}
+	if end >= len(rest) {
 		return false
 	}
-	if len(f[0]) <= 3 && isAllDigits(f[0]) {
+	a := rest[end]
+	if seriesWords[a.text] || (len(a.text) <= 3 && isAllDigits(a.text)) {
 		return true
 	}
-	if readMarkers[f[0]] && len(f) > 1 {
-		return (len(f[1]) <= 3 && isAllDigits(f[1])) || numberWords[f[1]] > 0
+	if a.raw == strings.ToUpper(a.raw) && romanRe.MatchString(a.raw) && romanValue(a.raw) >= 1 && romanValue(a.raw) <= 30 {
+		return true
+	}
+	if readMarkers[a.text] && end+1 < len(rest) {
+		b := rest[end+1]
+		return (len(b.text) <= 3 && isAllDigits(b.text)) || numberWords[b.text] > 0
 	}
 	return false
 }
