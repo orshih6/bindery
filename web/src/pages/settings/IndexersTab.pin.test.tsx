@@ -148,6 +148,25 @@ describe('IndexersTab download client pin', () => {
     expect(screen.queryByText('settings.indexers.pinnedClientMissing')).not.toBeInTheDocument()
   })
 
+  it('keeps a wrong protocol pin visible and warns about it on the row', async () => {
+    // The usenet client sab (id 4) pinned to a torrent indexer.
+    render(<Harness indexers={[makeIndexer({ downloadClientId: 4 })]} />)
+    expect(await screen.findByText('settings.indexers.pinnedClientWrongProtocol name=sab')).toBeInTheDocument()
+    const select = await openEdit()
+    expect((select as HTMLSelectElement).value).toBe('4')
+    const names = within(select).getAllByRole('option').map(o => o.textContent)
+    expect(names).toContain('settings.indexers.form.downloadClientWrongProtocolOption name=sab')
+  })
+
+  it('shows no pin warning at all when the client list fails to load', async () => {
+    m.listDownloadClients.mockRejectedValue(new Error('boom'))
+    render(<Harness indexers={[makeIndexer({ downloadClientId: 2 }), makeIndexer({ id: 2, name: 'Other', url: 'https://o/api', downloadClientId: 99 })]} />)
+    await waitFor(() => expect(m.listDownloadClients).toHaveBeenCalled())
+    // Let the rejection settle before asserting nothing appeared.
+    await new Promise(r => setTimeout(r, 20))
+    expect(screen.queryByText(/pinnedClient/)).not.toBeInTheDocument()
+  })
+
   it('sends the pin when adding an indexer', async () => {
     m.addIndexer.mockImplementation(async p => ({ ...makeIndexer(), ...p, id: 9 }) as Indexer)
     render(<Harness indexers={[]} />)

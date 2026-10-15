@@ -550,12 +550,27 @@ indexer already pinned to a client that was disabled later still saves.
 
 A pinned grab ignores the client's priority and media type routing. If the pinned
 client is disabled, missing or of the wrong protocol, the grab fails and no other
-client is tried: `POST /queue/grab`, `POST /queue/{id}/retry`, the bulk retry and
-`POST /pending/{id}/grab` answer `400` with `code: "indexer_client_unavailable"`
-and a message naming the indexer (and the client, for admins). A client that is
-enabled but does not answer is the usual `502`, with the message extended to say
-the indexer is pinned and no other client was tried. The field is only returned by
-the admin only indexer endpoints.
+client is tried: `POST /queue/grab`, `POST /queue/{id}/retry` and
+`POST /pending/{id}/grab` answer `400` with `code: "indexer_client_unavailable"`.
+The message names the indexer, and the client only for an admin caller. The bulk
+retry returns the same text per item in its results map instead of a status. A
+client that is enabled but does not answer is the usual `502`, with the message
+extended to say the indexer is pinned and no other client was tried. The field is
+only returned by the admin only indexer endpoints.
+
+A grab that arrives without an `indexerId` is tied to an indexer by its download
+URL's host. One indexer on that host, pinned, applies its pin. Several indexers on
+the host with at least one pinned cannot be told apart, so the grab is refused
+with the same `400` and code (nothing is sent), and the message says the release
+could not be tied to one indexer. A host that matches no indexer carries nothing
+to act on and is routed as if unpinned, so send `indexerId` to be sure the pin
+applies. A retry of a Queue row whose indexer was deleted is attributed the same
+way, by the stored release URL.
+
+On save, a client with the wrong protocol is refused only when the request sets
+the pin or changes the indexer `type`. Enabling, disabling or reprioritising an
+indexer whose pinned client was changed to the other protocol later still saves;
+its grabs fail at grab time.
 
 `DELETE /downloadclient/{id}` answers `409` while any indexer is pinned to the
 client, with `error` and an `indexers` array of their names. Disabling the client

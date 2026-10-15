@@ -233,8 +233,9 @@ function indexerProtocol(indexerType: string): 'torrent' | 'usenet' {
 
 // DownloadClientField pins an indexer to one download client (#3080). It lists
 // only enabled clients of the indexer's protocol. A client the indexer is
-// already pinned to stays listed, marked disabled, so the form does not show a
-// blank that hides the real saved value.
+// already pinned to stays listed even when it is disabled or of the other
+// protocol, marked as such, so the form does not show a blank that hides the
+// real saved value.
 function DownloadClientField({ value, onChange, indexerType, clients }: {
   value: number | null | undefined
   onChange: (v: number | null) => void
@@ -243,7 +244,12 @@ function DownloadClientField({ value, onChange, indexerType, clients }: {
 }) {
   const { t } = useTranslation()
   const protocol = indexerProtocol(indexerType)
-  const options = clients.filter(c => clientProtocol(c.type) === protocol && (c.enabled || c.id === value))
+  const options = clients.filter(c => c.id === value || (c.enabled && clientProtocol(c.type) === protocol))
+  const optionLabel = (c: DownloadClient) => {
+    if (!c.enabled) return t('settings.indexers.form.downloadClientDisabledOption', { name: c.name })
+    if (clientProtocol(c.type) !== protocol) return t('settings.indexers.form.downloadClientWrongProtocolOption', { name: c.name })
+    return c.name
+  }
   return (
     <div>
       <label className="block text-xs text-slate-600 dark:text-zinc-400 mb-1">{t('settings.indexers.form.downloadClient')}</label>
@@ -256,7 +262,7 @@ function DownloadClientField({ value, onChange, indexerType, clients }: {
         <option value="">{t('settings.indexers.form.downloadClientDefault')}</option>
         {options.map(c => (
           <option key={c.id} value={c.id}>
-            {c.enabled ? c.name : t('settings.indexers.form.downloadClientDisabledOption', { name: c.name })}
+            {optionLabel(c)}
           </option>
         ))}
       </select>
@@ -325,15 +331,16 @@ export default function IndexersTab({ indexers, setIndexers, prowlarrInstances, 
   const [indexerTestResults, setIndexerTestResults] = useState<Record<number, IndexerTestResult & { testing?: boolean }>>({})
   const [confirmDeleteIndexer, setConfirmDeleteIndexer] = useState<number | null>(null)
   const [prowlarrTestResult, setProwlarrTestResult] = useState<Record<number, { ok: boolean; msg: string }>>({})
-  // null until the list has loaded, so a pin is not reported missing while the
-  // clients are still on their way.
+  // null until the list has loaded, and left null if loading fails, so a pin
+  // is never reported missing or disabled on the strength of a list that is not
+  // there.
   const [clients, setClients] = useState<DownloadClient[] | null>(null)
   useEffect(() => {
     let live = true
     Promise.resolve()
       .then(() => api.listDownloadClients())
       .then(list => { if (live) setClients(list ?? []) })
-      .catch(() => { if (live) setClients([]) })
+      .catch(() => { /* leave clients null: no warning without a list */ })
     return () => { live = false }
   }, [])
 
@@ -411,7 +418,8 @@ export default function IndexersTab({ indexers, setIndexers, prowlarrInstances, 
               {(() => {
                 if (idx.downloadClientId == null || clients === null) return null
                 const pinned = clients.find(c => c.id === idx.downloadClientId)
-                if (pinned?.enabled) return null
+                const wrongProtocol = pinned != null && clientProtocol(pinned.type) !== indexerProtocol(idx.type)
+                if (pinned?.enabled && !wrongProtocol) return null
                 return (
                   <div
                     role="status"
@@ -419,9 +427,11 @@ export default function IndexersTab({ indexers, setIndexers, prowlarrInstances, 
                   >
                     <span className="inline-block w-2 h-2 rounded-full flex-shrink-0 bg-amber-500" />
                     <span>
-                      {pinned
-                        ? t('settings.indexers.pinnedClientDisabled', { name: pinned.name })
-                        : t('settings.indexers.pinnedClientMissing')}
+                      {!pinned
+                        ? t('settings.indexers.pinnedClientMissing')
+                        : !pinned.enabled
+                          ? t('settings.indexers.pinnedClientDisabled', { name: pinned.name })
+                          : t('settings.indexers.pinnedClientWrongProtocol', { name: pinned.name })}
                     </span>
                   </div>
                 )

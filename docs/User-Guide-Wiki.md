@@ -439,10 +439,14 @@ pin to a client of the other protocol is refused.
   the pinned client even if another client has an audiobook category.
 * **There is no fallback.** If the pinned client is disabled, missing or of the
   wrong protocol, or does not answer, the grab fails with a message naming the
-  indexer and the client, and nothing is sent to any other client. In the
-  scheduler the failure shows in History and the log. The indexer's row in
-  Settings shows an amber warning while its pinned client is disabled. Enable
-  the client or pick another one and the next grab goes through.
+  indexer (and the client too, if you are an admin), and nothing is sent to any
+  other client. A scheduled search skips that indexer's releases, still grabs
+  from your other indexers, and records the failure in History once a day per
+  book and indexer. The indexer's row in Settings shows an amber warning while
+  its pinned client is disabled, missing or the wrong protocol. Enable the
+  client or pick another one and the next grab goes through. A grab with no
+  indexer id (an API caller) is tied to its indexer by the release URL's host;
+  see the troubleshooting page for the limits.
 * **A pinned client cannot be deleted.** Deleting a download client that an
   indexer is pinned to is refused (HTTP 409) with the indexer names. Choose
   another client for those indexers, or set them back to *Default*, first.

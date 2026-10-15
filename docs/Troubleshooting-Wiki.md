@@ -260,11 +260,30 @@ changed after the pin). If the client is enabled but the message says the
 release could not be sent, the client is not answering: check that it is running
 and reachable from Bindery.
 
+The message names the indexer, and the client too when you are an admin; other
+users see the indexer only.
+
 Bindery will not send the release to a different client. That is deliberate: the
 pin exists so a private tracker's torrents never reach your public client. To
 send the indexer's grabs through the normal routing again, set its **Download
-client** back to *Default*. Failed scheduled grabs appear in History, and the
-Queue row of a failed grab offers **Retry download** once the cause is fixed.
+client** back to *Default*. A grab refused before anything was sent creates no
+Queue row: from the search page the error appears on the page, and a scheduled
+search records it in History (once a day per book and indexer, and as a
+notification naming the indexer). Just search or grab again once the cause is
+fixed. Only a grab that reached an enabled client and failed there leaves a
+failed Queue row with **Retry download**.
+
+Limits worth knowing:
+
+* A scheduled search skips only the failing indexer's releases. Releases from
+  other indexers for the same book are still grabbed, and nothing from the
+  pinned indexer goes to another client.
+* A grab with no `indexerId` whose download URL is on a host that matches no
+  indexer (a proxied link on another host) cannot be tied to a pinned indexer
+  and is routed as if unpinned. Grabs from the Bindery UI always send the
+  indexer; API callers should send `indexerId`.
+* Several indexers on one host with one of them pinned: a grab without
+  `indexerId` is refused, because it cannot be told which indexer it came from.
 
 ### The Queue looks empty, or shorter than it should be
 

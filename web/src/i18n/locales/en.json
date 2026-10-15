@@ -1188,9 +1188,11 @@
         "downloadClient": "Download client",
         "downloadClientDefault": "Default (automatic routing)",
         "downloadClientDisabledOption": "{{name}} (disabled)",
+        "downloadClientWrongProtocolOption": "{{name}} (wrong protocol)",
         "downloadClientHint": "Send every grab from this indexer to one download client, whatever its priority or category routing says. Leave on Default to let Bindery choose. If the chosen client is disabled, missing or unreachable the grab fails with an error instead of going to another client, so private tracker traffic never reaches your public client. Only enabled clients of this indexer's protocol are listed."
       },
       "pinnedClientDisabled": "Pinned to download client {{name}}, which is disabled. Grabs from this indexer will fail, and will not go to another client, until you enable it or choose a different one.",
+      "pinnedClientWrongProtocol": "Pinned to download client {{name}}, which is the wrong protocol for this indexer. Grabs from this indexer will fail, and will not go to another client, until you choose a matching client.",
       "pinnedClientMissing": "Pinned to a download client that no longer exists. Grabs from this indexer will fail until you choose a different one.",
       "quotaUsage": "{{used}} of {{limit}} queries in the last 24 hours",
       "quotaReached": "Daily query limit of {{limit}} reached. This indexer is being skipped until the oldest hour of queries falls out of the window.",
