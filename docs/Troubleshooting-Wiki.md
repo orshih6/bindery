@@ -279,11 +279,20 @@ Limits worth knowing:
   other indexers for the same book are still grabbed, and nothing from the
   pinned indexer goes to another client.
 * A grab with no `indexerId` whose download URL is on a host that matches no
-  indexer (a proxied link on another host) cannot be tied to a pinned indexer
-  and is routed as if unpinned. Grabs from the Bindery UI always send the
-  indexer; API callers should send `indexerId`.
-* Several indexers on one host with one of them pinned: a grab without
-  `indexerId` is refused, because it cannot be told which indexer it came from.
+  indexer (a proxied link on another host, a `www.` or other subdomain
+  spelling, a scheme-less indexer URL) cannot be tied to a pinned indexer and
+  is routed as if unpinned. The host match ignores case, a trailing dot and the
+  port, so the usual Prowlarr case of `prowlarr` against `prowlarr:9696` is
+  handled. Grabs from the Bindery UI and the scheduler always send the indexer;
+  API callers should send `indexerId`.
+* An `indexerId` you send is taken at face value when that indexer's host
+  matches the release URL's host, even if another indexer on that host is
+  pinned.
+* On a shared Prowlarr or Jackett host, one pinned indexer makes id-less API
+  grabs fail for every indexer on that host, because such a grab cannot be told
+  apart. Send `indexerId` (the UI and the scheduler already do).
+* A pending (held) release from a pinned indexer whose client is down stays in
+  Pending and is tried again on the next sweep. It is not discarded.
 
 ### The Queue looks empty, or shorter than it should be
 

@@ -1356,19 +1356,14 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 	}
 	if best == nil {
 		// Re-evaluate any existing pending releases for this book/format with the current age.
-		best = s.checkPendingReleases(ctx, book, mediaType, dm)
-		if best != nil {
-			c, skip, err := s.checkPin(ctx, book, best, skippedPinned)
-			if err != nil {
-				slog.Error("SearchAndGrabBook: failed to resolve the indexer's pinned download client", "indexer", best.IndexerName, "error", err)
-				outcome = "download client lookup failed"
-				return
-			}
-			if skip {
-				best = nil
-			} else {
-				bestClient = c
-			}
+		var pendErr error
+		best, bestClient, pendErr = s.pendingApproved(ctx, book, mediaType, dm, func(res *newznab.SearchResult) (*models.DownloadClient, bool, error) {
+			return s.checkPin(ctx, book, res, skippedPinned)
+		})
+		if pendErr != nil {
+			slog.Error("SearchAndGrabBook: failed to resolve the indexer's pinned download client for a pending release", "error", pendErr)
+			outcome = "download client lookup failed"
+			return
 		}
 		if best == nil {
 			switch {
@@ -1598,12 +1593,24 @@ func (s *Scheduler) storePending(ctx context.Context, bookID int64, mediaType st
 // book's ebook and audiobook pending entries are evaluated independently.
 // If any now passes the decision engine it is returned for immediate grab.
 func (s *Scheduler) checkPendingReleases(ctx context.Context, book models.Book, mediaType string, dm *decision.DecisionMaker) *newznab.SearchResult {
+	res, _, _ := s.pendingApproved(ctx, book, mediaType, dm, nil)
+	return res
+}
+
+// pendingApproved is checkPendingReleases with a gate. accept, when set, is
+// asked about each approved release before it is taken: it returns the client to
+// use, whether to skip the release, or an error that stops the sweep. A skipped
+// release stays pending, untouched, for the next sweep (a pinned client that is
+// down must not cost the user a held release), and the next approved row is
+// tried. Only a release that is taken is deleted from pending.
+func (s *Scheduler) pendingApproved(ctx context.Context, book models.Book, mediaType string, dm *decision.DecisionMaker,
+	accept func(*newznab.SearchResult) (*models.DownloadClient, bool, error)) (*newznab.SearchResult, *models.DownloadClient, error) {
 	if s.pending == nil {
-		return nil
+		return nil, nil, nil
 	}
 	pendingList, err := s.pending.ListByBookAndMediaType(ctx, book.ID, mediaType)
 	if err != nil || len(pendingList) == 0 {
-		return nil
+		return nil, nil, nil
 	}
 
 	// Re-hydrate stored releases and re-evaluate with current age.
@@ -1616,16 +1623,27 @@ func (s *Scheduler) checkPendingReleases(ctx context.Context, book models.Book, 
 		rel := decision.ReleaseFromSearchResult(res)
 		decisions := dm.Evaluate([]decision.Release{rel}, book)
 		if len(decisions) > 0 && decisions[0].Approved {
+			var client *models.DownloadClient
+			if accept != nil {
+				c, skip, err := accept(&res)
+				if err != nil {
+					return nil, nil, err
+				}
+				if skip {
+					continue
+				}
+				client = c
+			}
 			if err := s.pending.DeleteByID(ctx, pendingList[i].ID); err != nil {
 				// If the entry survives it is re-approved and re-grabbed on the
 				// next cycle — duplicate grabs with no visible cause.
 				slog.Warn("failed to delete pending release after approval",
 					"pending_id", pendingList[i].ID, "book_id", book.ID, "guid", res.GUID, "error", err)
 			}
-			return &res
+			return &res, client, nil
 		}
 	}
-	return nil
+	return nil, nil, nil
 }
 
 func (s *Scheduler) searchWanted() {

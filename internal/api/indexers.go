@@ -223,7 +223,7 @@ func (h *IndexerHandler) validateDownloadClientPin(ctx context.Context, idx mode
 	// indexer, would be blocked by a client changed behind the pin's back, and
 	// the grab fails loudly at grab time anyway.
 	pinChanged := stored == nil || stored.DownloadClientID == nil || *stored.DownloadClientID != *idx.DownloadClientID
-	typeChanged := stored == nil || stored.Type != idx.Type
+	typeChanged := stored == nil || effectiveIndexerType(stored.Type) != effectiveIndexerType(idx.Type)
 	if got := db.ClientProtocol(c.Type); got != idx.Protocol() && (pinChanged || typeChanged) {
 		return errPinInvalid(fmt.Sprintf("download client %q is a %s client but this indexer is %s, so it cannot be pinned to it; pick a %s client",
 			c.Name, got, idx.Protocol(), idx.Protocol()))
@@ -232,6 +232,16 @@ func (h *IndexerHandler) validateDownloadClientPin(ctx context.Context, idx mode
 		return errPinInvalid(fmt.Sprintf("download client %q is disabled; enable it first or pick another", c.Name))
 	}
 	return nil
+}
+
+// effectiveIndexerType reads an empty type as the default, usenet, which is what
+// Indexer.Protocol and the searcher already do, so an update body that sends an
+// empty type is not a change of type for an indexer that is already usenet.
+func effectiveIndexerType(t string) string {
+	if t == "" {
+		return "newznab"
+	}
+	return t
 }
 
 // pinInvalidError is a 400 about the download client pin, as opposed to a

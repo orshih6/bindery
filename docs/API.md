@@ -559,13 +559,29 @@ extended to say the indexer is pinned and no other client was tried. The field i
 only returned by the admin only indexer endpoints.
 
 A grab that arrives without an `indexerId` is tied to an indexer by its download
-URL's host. One indexer on that host, pinned, applies its pin. Several indexers on
-the host with at least one pinned cannot be told apart, so the grab is refused
-with the same `400` and code (nothing is sent), and the message says the release
-could not be tied to one indexer. A host that matches no indexer carries nothing
-to act on and is routed as if unpinned, so send `indexerId` to be sure the pin
-applies. A retry of a Queue row whose indexer was deleted is attributed the same
-way, by the stored release URL.
+URL's host, whether or not the URL is already signed. One indexer on that host,
+pinned, applies its pin. When another indexer on the host is pinned and the grab
+cannot be tied to just one indexer, it is refused with the same `400` and code
+(nothing is sent) and the message says the release could not be tied to one
+indexer. That includes a pinned indexer without a stored key sharing a host with
+a keyed one. On a shared Prowlarr or Jackett host, one pinned indexer therefore
+makes id-less API grabs fail for every indexer on that host; the web app and the
+scheduler always send the indexer, and are unaffected.
+
+An `indexerId` you send is taken at face value when that indexer's host matches
+the release URL's host, even if another indexer on the same host is pinned. An id
+that contradicts the URL's host is refused when an indexer on the URL's host is
+pinned (unless the id itself is pinned, in which case its own pin applies).
+
+The host comparison ignores case, one trailing dot and the port, in any
+combination: `prowlarr` and `prowlarr:9696` are the same host. Ignoring a
+differing port is deliberate, because a spurious refusal is safer than letting a
+private release reach the public client. `www.` and other subdomains, scheme-less
+indexer URLs and punycode against Unicode spellings are different hosts and are
+not matched. A host that matches no indexer at all carries nothing to act on and
+is routed as if unpinned, so send `indexerId` to be sure the pin applies. A retry
+of a Queue row whose indexer was deleted is attributed the same way, by the stored
+release URL.
 
 On save, a client with the wrong protocol is refused only when the request sets
 the pin or changes the indexer `type`. Enabling, disabling or reprioritising an

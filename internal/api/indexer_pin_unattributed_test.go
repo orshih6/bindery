@@ -113,7 +113,7 @@ func TestGrab_AmbiguousHostWithNoPinnedIndexerProceeds(t *testing.T) {
 func TestGrab_ReleaseOnAnUnrelatedHostIsUnpinned(t *testing.T) {
 	f := newPinFixture(t)
 	f.pin(t, &f.privC.ID)
-	w := f.grabURL("g-elsewhere", f.pub.srv.URL+"/other.nzb", nil, false)
+	w := f.grabURL("g-elsewhere", otherHostURL(f.pub.srv.URL)+"/other.nzb", nil, false)
 	f.wantReached(t, w, 1, 0)
 }
 
@@ -149,7 +149,7 @@ func TestRetry_RowWithNoIndexerOnUnknownHostIsUnpinned(t *testing.T) {
 	f := newPinFixture(t)
 	f.pin(t, &f.privC.ID)
 	dl := &models.Download{
-		GUID: "g-orphan2", Title: "Pin Author - Pinned Book epub", NZBURL: f.pub.srv.URL + "/gone.nzb", Size: 100,
+		GUID: "g-orphan2", Title: "Pin Author - Pinned Book epub", NZBURL: otherHostURL(f.pub.srv.URL) + "/gone.nzb", Size: 100,
 		Status: models.StateFailed, Protocol: "usenet", Quality: "epub", BookID: &f.book.ID,
 	}
 	if err := f.downl.Create(f.ctx, dl); err != nil {

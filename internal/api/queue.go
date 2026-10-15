@@ -1386,15 +1386,27 @@ func (h *QueueHandler) selectClient(ctx context.Context, protocol, mediaType str
 	return db.PickClientForMediaType(candidates, mediaType), nil
 }
 
-// pinnedIndexerOnHost looks for an indexer pinned to a download client among
-// those on the release URL's host, for a grab that carries no indexer id. None
-// pinned means the grab is unaffected (nil, nil). Exactly one indexer on the
-// host, pinned, is the release's indexer and is returned so its pin applies.
-// Several on the host with at least one pinned cannot be told apart, and the
-// grab is refused with an *ambiguousPinError rather than guessed. A host that
-// matches no indexer carries nothing to act on and is left unpinned: send the
-// indexer id to have the pin apply.
-func (h *QueueHandler) pinnedIndexerOnHost(ctx context.Context, rawURL string) (*models.Indexer, error) {
+// pinnedIndexerOnHost checks, for a grab, whether the release could have come
+// from an indexer pinned to a download client that the grab is not already tied
+// to (#3080). The indexers considered are those on the release URL's host
+// (newznab.DownloadHostMatchesIndexer). It returns the indexer whose pin should
+// apply when that is unambiguous, or an *ambiguousPinError when the grab must be
+// refused, or (nil, nil) when nothing about the host calls for action.
+//
+//   - The caller named no indexer (callerID nil). Signing may still have
+//     attributed one (signedByHost), but it only counts indexers that can sign.
+//     Exactly one indexer on the host, pinned and not otherwise attributed, is
+//     the release's indexer. Otherwise any pinned indexer on the host that is not
+//     the attributed one makes the grab ambiguous, and it is refused.
+//   - The caller named an indexer. A truthful id, one whose host matches the
+//     release, is taken at face value, even when a pinned indexer shares the
+//     host. An id that contradicts the host is refused when an indexer on the
+//     release's host is pinned, unless that id is itself pinned (its own pin
+//     applies) or signing found the host's indexer (signedByHost).
+//
+// A host that matches no indexer carries nothing to act on and is left unpinned:
+// send the indexer id to have the pin apply.
+func (h *QueueHandler) pinnedIndexerOnHost(ctx context.Context, rawURL string, callerID, currentID *int64, signedByHost bool) (*models.Indexer, error) {
 	if h.indexers == nil || rawURL == "" {
 		return nil, nil
 	}
@@ -1403,23 +1415,55 @@ func (h *QueueHandler) pinnedIndexerOnHost(ctx context.Context, rawURL string) (
 		return nil, err
 	}
 	var matching []models.Indexer
-	var pinned []string
-	for _, idx := range idxs {
+	var pinnedOnHost []models.Indexer
+	var supplied *models.Indexer
+	for i := range idxs {
+		idx := idxs[i]
+		if callerID != nil && idx.ID == *callerID {
+			supplied = &idxs[i]
+		}
 		if !newznab.DownloadHostMatchesIndexer(rawURL, idx.URL) {
 			continue
 		}
 		matching = append(matching, idx)
 		if idx.DownloadClientID != nil {
-			pinned = append(pinned, idx.Name)
+			pinnedOnHost = append(pinnedOnHost, idx)
 		}
 	}
-	if len(pinned) == 0 {
+	if len(pinnedOnHost) == 0 {
 		return nil, nil
 	}
-	if len(matching) == 1 {
+	names := func(list []models.Indexer) []string {
+		out := make([]string, 0, len(list))
+		for _, idx := range list {
+			out = append(out, idx.Name)
+		}
+		return out
+	}
+
+	if callerID != nil {
+		if signedByHost || supplied == nil || supplied.DownloadClientID != nil {
+			return nil, nil
+		}
+		if newznab.DownloadHostMatchesIndexer(rawURL, supplied.URL) {
+			return nil, nil
+		}
+		return nil, &ambiguousPinError{pinned: names(pinnedOnHost)}
+	}
+
+	if len(matching) == 1 && (currentID == nil || *currentID == matching[0].ID) {
 		return &matching[0], nil
 	}
-	return nil, &ambiguousPinError{pinned: pinned}
+	var others []models.Indexer
+	for _, idx := range pinnedOnHost {
+		if currentID == nil || idx.ID != *currentID {
+			others = append(others, idx)
+		}
+	}
+	if len(others) == 0 {
+		return nil, nil
+	}
+	return nil, &ambiguousPinError{pinned: names(others)}
 }
 
 // clientForGrab picks the client for a grab. An indexer pinned to a download
@@ -1619,6 +1663,13 @@ func (h *QueueHandler) grab(ctx context.Context, req grabRequest) (*models.Downl
 	// hands back an apikey-less download URL plus the indexer id; sign it
 	// server-side here. No-op when the URL already carries a key (scheduler /
 	// retry paths) or its host does not match the indexer.
+	// callerIndexerID is the indexer the caller (or the stored row, on a
+	// retry) named, before anything below attributes the release by host.
+	var callerIndexerID *int64
+	if indexerID != nil {
+		v := *indexerID
+		callerIndexerID = &v
+	}
 	nzbURL, hostMatched := h.signNZBURL(ctx, req.NZBURL, indexerID)
 	// The host-match fallback knows which indexer signed the URL, so record it.
 	// Without this the row keeps a nil (or dangling) IndexerID for precisely the
@@ -1627,18 +1678,17 @@ func (h *QueueHandler) grab(ctx context.Context, req grabRequest) (*models.Downl
 	if hostMatched != nil {
 		indexerID = hostMatched
 	}
-	// A grab still unattributed here may nonetheless come from a pinned
-	// indexer: signing cannot attribute a pre signed URL, a keyless indexer or
-	// two indexers sharing a host (#3080). Look at every indexer on the
+	// Signing cannot attribute a pre signed URL, a keyless indexer or two
+	// indexers sharing a host, and it only counts indexers that can sign, so
+	// an id-less grab may be tied to an unpinned indexer while a pinned one on
+	// the same host is the real source (#3080). Look at every indexer on the
 	// release's host before the default routing is allowed to pick a client.
-	if indexerID == nil {
-		onHost, err := h.pinnedIndexerOnHost(ctx, req.NZBURL)
-		if err != nil {
-			return nil, err
-		}
-		if onHost != nil {
-			indexerID = &onHost.ID
-		}
+	onHost, err := h.pinnedIndexerOnHost(ctx, req.NZBURL, callerIndexerID, indexerID, hostMatched != nil)
+	if err != nil {
+		return nil, err
+	}
+	if onHost != nil {
+		indexerID = &onHost.ID
 	}
 
 	// The client is chosen only now, after the host match above has settled
