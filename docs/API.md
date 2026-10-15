@@ -558,30 +558,41 @@ client that is enabled but does not answer is the usual `502`, with the message
 extended to say the indexer is pinned and no other client was tried. The field is
 only returned by the admin only indexer endpoints.
 
-A grab that arrives without an `indexerId` is tied to an indexer by its download
-URL's host, whether or not the URL is already signed. One indexer on that host,
-pinned, applies its pin. When another indexer on the host is pinned and the grab
-cannot be tied to just one indexer, it is refused with the same `400` and code
-(nothing is sent) and the message says the release could not be tied to one
-indexer. That includes a pinned indexer without a stored key sharing a host with
-a keyed one. On a shared Prowlarr or Jackett host, one pinned indexer therefore
-makes id-less API grabs fail for every indexer on that host; the web app and the
-scheduler always send the indexer, and are unaffected.
 
-An `indexerId` you send is taken at face value when that indexer's host matches
-the release URL's host, even if another indexer on the same host is pinned. An id
-that contradicts the URL's host is refused when an indexer on the URL's host is
-pinned (unless the id itself is pinned, in which case its own pin applies).
+Which indexer a grab belongs to is decided once, from the `indexerId` you send
+and the release URL's host, before the URL is signed. Signing never overrides
+the decision. The rules, in order:
+
+1. An `indexerId` that exists and is pinned always wins. Its pin applies,
+   whatever the URL's host is and whoever could sign the URL.
+2. An `indexerId` that exists and is not pinned is taken at face value when its
+   host matches the release URL's host, even if a pinned indexer shares that
+   host. When its host does not match the URL's host and some indexer that does
+   match is pinned, the grab is refused. Otherwise it stands.
+3. An `indexerId` that matches no indexer (or `null`, as on a retry of a row whose
+   indexer was deleted) is treated as no id at all.
+4. With no usable id, the indexers whose host matches the URL decide. None: the
+   grab is routed as if unpinned. Exactly one: that is the release's indexer, and
+   its pin, if any, applies (this finds a recreated indexer, and keyless
+   indexers). Several: if any is pinned the grab is refused, because it cannot be
+   told which one it came from; if none is pinned nothing changes.
+
+A refusal is the `400` with `code: "indexer_client_unavailable"` and nothing is
+sent. The message says the release could not be tied to one indexer (or that the
+named indexer does not match the release's host), and lists the pinned indexers
+for an admin only. The row's `indexerId` is the decided indexer. The retry
+and the pending grab go through the same decision.
 
 The host comparison ignores case, one trailing dot and the port, in any
 combination: `prowlarr` and `prowlarr:9696` are the same host. Ignoring a
 differing port is deliberate, because a spurious refusal is safer than letting a
-private release reach the public client. `www.` and other subdomains, scheme-less
-indexer URLs and punycode against Unicode spellings are different hosts and are
-not matched. A host that matches no indexer at all carries nothing to act on and
-is routed as if unpinned, so send `indexerId` to be sure the pin applies. A retry
-of a Queue row whose indexer was deleted is attributed the same way, by the stored
-release URL.
+private release reach the public client. These do not match, so an id-less grab
+through them is routed as if unpinned unless you send `indexerId`: aliases of one
+machine (`localhost`, `127.0.0.1` and a DNS name), `www.` and other subdomains,
+scheme-less indexer URLs, and punycode against Unicode spellings. On a shared
+Prowlarr or Jackett host, one pinned indexer makes id-less API grabs fail for
+every other indexer on that host; the web app and the scheduler always send the
+indexer and are unaffected.
 
 On save, a client with the wrong protocol is refused only when the request sets
 the pin or changes the indexer `type`. Enabling, disabling or reprioritising an

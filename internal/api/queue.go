@@ -114,24 +114,6 @@ func isAdminCtx(ctx context.Context) bool {
 // nudge, which would be wrong when clients exist and the pin is the problem.
 const codeIndexerClientUnavailable = "indexer_client_unavailable"
 
-// ambiguousPinError refuses a grab that arrived without an indexer id and that
-// could not be tied to one indexer, while an indexer on the release's host is
-// pinned to a download client (#3080). Sending it to the default client could
-// put a private tracker's release on the public client, so it is not sent.
-type ambiguousPinError struct{ pinned []string }
-
-func (e *ambiguousPinError) Error() string { return e.Message(true) }
-
-// Message names the pinned indexers only for an admin.
-func (e *ambiguousPinError) Message(includeNames bool) string {
-	names := ""
-	if includeNames && len(e.pinned) > 0 {
-		names = " (" + strings.Join(e.pinned, ", ") + ")"
-	}
-	return "this release could not be tied to one indexer, and an indexer on its host is pinned to a download client" + names +
-		". It was not sent to any client. Grab it from the search results so the indexer is known."
-}
-
 // pinnedMessage renders a pin failure for the caller's role.
 func pinnedMessage(ctx context.Context, perr *db.PinnedClientError) string {
 	return perr.Message(isAdminCtx(ctx))
@@ -1386,86 +1368,6 @@ func (h *QueueHandler) selectClient(ctx context.Context, protocol, mediaType str
 	return db.PickClientForMediaType(candidates, mediaType), nil
 }
 
-// pinnedIndexerOnHost checks, for a grab, whether the release could have come
-// from an indexer pinned to a download client that the grab is not already tied
-// to (#3080). The indexers considered are those on the release URL's host
-// (newznab.DownloadHostMatchesIndexer). It returns the indexer whose pin should
-// apply when that is unambiguous, or an *ambiguousPinError when the grab must be
-// refused, or (nil, nil) when nothing about the host calls for action.
-//
-//   - The caller named no indexer (callerID nil). Signing may still have
-//     attributed one (signedByHost), but it only counts indexers that can sign.
-//     Exactly one indexer on the host, pinned and not otherwise attributed, is
-//     the release's indexer. Otherwise any pinned indexer on the host that is not
-//     the attributed one makes the grab ambiguous, and it is refused.
-//   - The caller named an indexer. A truthful id, one whose host matches the
-//     release, is taken at face value, even when a pinned indexer shares the
-//     host. An id that contradicts the host is refused when an indexer on the
-//     release's host is pinned, unless that id is itself pinned (its own pin
-//     applies) or signing found the host's indexer (signedByHost).
-//
-// A host that matches no indexer carries nothing to act on and is left unpinned:
-// send the indexer id to have the pin apply.
-func (h *QueueHandler) pinnedIndexerOnHost(ctx context.Context, rawURL string, callerID, currentID *int64, signedByHost bool) (*models.Indexer, error) {
-	if h.indexers == nil || rawURL == "" {
-		return nil, nil
-	}
-	idxs, err := h.indexers.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var matching []models.Indexer
-	var pinnedOnHost []models.Indexer
-	var supplied *models.Indexer
-	for i := range idxs {
-		idx := idxs[i]
-		if callerID != nil && idx.ID == *callerID {
-			supplied = &idxs[i]
-		}
-		if !newznab.DownloadHostMatchesIndexer(rawURL, idx.URL) {
-			continue
-		}
-		matching = append(matching, idx)
-		if idx.DownloadClientID != nil {
-			pinnedOnHost = append(pinnedOnHost, idx)
-		}
-	}
-	if len(pinnedOnHost) == 0 {
-		return nil, nil
-	}
-	names := func(list []models.Indexer) []string {
-		out := make([]string, 0, len(list))
-		for _, idx := range list {
-			out = append(out, idx.Name)
-		}
-		return out
-	}
-
-	if callerID != nil {
-		if signedByHost || supplied == nil || supplied.DownloadClientID != nil {
-			return nil, nil
-		}
-		if newznab.DownloadHostMatchesIndexer(rawURL, supplied.URL) {
-			return nil, nil
-		}
-		return nil, &ambiguousPinError{pinned: names(pinnedOnHost)}
-	}
-
-	if len(matching) == 1 && (currentID == nil || *currentID == matching[0].ID) {
-		return &matching[0], nil
-	}
-	var others []models.Indexer
-	for _, idx := range pinnedOnHost {
-		if currentID == nil || idx.ID != *currentID {
-			others = append(others, idx)
-		}
-	}
-	if len(others) == 0 {
-		return nil, nil
-	}
-	return nil, &ambiguousPinError{pinned: names(others)}
-}
-
 // clientForGrab picks the client for a grab. An indexer pinned to a download
 // client (#3080) gets exactly that client, whatever the protocol routing, media
 // type or priority would have chosen, or a *db.PinnedClientError when it cannot
@@ -1663,32 +1565,38 @@ func (h *QueueHandler) grab(ctx context.Context, req grabRequest) (*models.Downl
 	// hands back an apikey-less download URL plus the indexer id; sign it
 	// server-side here. No-op when the URL already carries a key (scheduler /
 	// retry paths) or its host does not match the indexer.
-	// callerIndexerID is the indexer the caller (or the stored row, on a
-	// retry) named, before anything below attributes the release by host.
-	var callerIndexerID *int64
-	if indexerID != nil {
-		v := *indexerID
-		callerIndexerID = &v
+	// One decision says which indexer the grab belongs to, before signing gets
+	// a say (#3080). Signing only counts indexers that can sign and picks by
+	// luck of who holds a key, so it may fill in an attribution the decision
+	// left open but never replaces or overrides one. See resolveGrabPin.
+	var decision grabPinDecision
+	if h.indexers != nil {
+		idxs, err := h.indexers.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		decision = resolveGrabPin(indexerID, req.NZBURL, idxs)
 	}
-	nzbURL, hostMatched := h.signNZBURL(ctx, req.NZBURL, indexerID)
-	// The host-match fallback knows which indexer signed the URL, so record it.
-	// Without this the row keeps a nil (or dangling) IndexerID for precisely the
-	// API callers the fallback exists for, and both the queue's indexer
-	// attribution and resolveSeedLimits' per-indexer overrides are lost (#2053).
-	if hostMatched != nil {
+	if decision.Kind == pinRefuse {
+		return nil, &ambiguousPinError{reason: decision.Reason, pinned: decision.Pinned}
+	}
+	signWith := indexerID
+	if decision.Kind == pinUseIndexer {
+		id := decision.IndexerID
+		signWith = &id
+	}
+	nzbURL, hostMatched := h.signNZBURL(ctx, req.NZBURL, signWith)
+	if decision.Kind == pinUseIndexer {
+		// The decided indexer is the row's indexer, whoever signed the URL.
+		id := decision.IndexerID
+		indexerID = &id
+	} else if hostMatched != nil {
+		// Nothing decided: the host-match fallback knows which indexer signed
+		// the URL, so record it. Without this the row keeps a nil (or dangling)
+		// IndexerID for precisely the API callers the fallback exists for, and
+		// both the queue's indexer attribution and resolveSeedLimits'
+		// per-indexer overrides are lost (#2053).
 		indexerID = hostMatched
-	}
-	// Signing cannot attribute a pre signed URL, a keyless indexer or two
-	// indexers sharing a host, and it only counts indexers that can sign, so
-	// an id-less grab may be tied to an unpinned indexer while a pinned one on
-	// the same host is the real source (#3080). Look at every indexer on the
-	// release's host before the default routing is allowed to pick a client.
-	onHost, err := h.pinnedIndexerOnHost(ctx, req.NZBURL, callerIndexerID, indexerID, hostMatched != nil)
-	if err != nil {
-		return nil, err
-	}
-	if onHost != nil {
-		indexerID = &onHost.ID
 	}
 
 	// The client is chosen only now, after the host match above has settled

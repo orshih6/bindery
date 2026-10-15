@@ -278,19 +278,22 @@ Limits worth knowing:
 * A scheduled search skips only the failing indexer's releases. Releases from
   other indexers for the same book are still grabbed, and nothing from the
   pinned indexer goes to another client.
-* A grab with no `indexerId` whose download URL is on a host that matches no
-  indexer (a proxied link on another host, a `www.` or other subdomain
-  spelling, a scheme-less indexer URL) cannot be tied to a pinned indexer and
-  is routed as if unpinned. The host match ignores case, a trailing dot and the
-  port, so the usual Prowlarr case of `prowlarr` against `prowlarr:9696` is
-  handled. Grabs from the Bindery UI and the scheduler always send the indexer;
-  API callers should send `indexerId`.
-* An `indexerId` you send is taken at face value when that indexer's host
-  matches the release URL's host, even if another indexer on that host is
-  pinned.
+* Which indexer a grab belongs to is decided from the `indexerId` sent and the
+  release URL's host: a pinned `indexerId` always wins; an unpinned one is taken
+  at face value if its host matches the URL (and refused if it contradicts the
+  URL's host while a pinned indexer owns that host); an unknown or missing id is
+  treated as no id, and then the indexers on the URL's host decide (none:
+  unpinned, one: that indexer, several with one pinned: refused). Grabs from the
+  Bindery UI and the scheduler always send the indexer.
+* An id-less API grab can only be tied to a pinned indexer by host. The match
+  ignores case, a trailing dot and the port, so `prowlarr` against
+  `prowlarr:9696` works. It does not match aliases of one machine (`localhost`,
+  `127.0.0.1` and a DNS name), `www.` or other subdomains, scheme-less indexer
+  URLs or punycode spellings; such a grab is routed as if unpinned. Send
+  `indexerId` to be sure the pin applies.
 * On a shared Prowlarr or Jackett host, one pinned indexer makes id-less API
-  grabs fail for every indexer on that host, because such a grab cannot be told
-  apart. Send `indexerId` (the UI and the scheduler already do).
+  grabs fail for every other indexer on that host, because such a grab cannot be
+  told apart. Send `indexerId` (the UI and the scheduler already do).
 * A pending (held) release from a pinned indexer whose client is down stays in
   Pending and is tried again on the next sweep. It is not discarded.
 

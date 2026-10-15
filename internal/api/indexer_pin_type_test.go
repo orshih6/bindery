@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+// An explicit empty type in an update body keeps the stored type. Without this
+// a torznab indexer saved with "" would be read as usenet and flip protocol.
+func TestIndexerUpdate_EmptyTypeKeepsTheStoredType(t *testing.T) {
+	f := newPinAPIFixture(t)
+	torrentID := strconv.FormatInt(f.torrent.ID, 10)
+	created := decodeIndexer(t, f.create(`{"name":"Priv","url":"http://192.168.1.50:9117/api","type":"torznab","downloadClientId":`+torrentID+`}`))
+	rec := f.update(created.ID, `{"type":"","priority":4}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
+	}
+	got := decodeIndexer(t, rec)
+	if got.Type != "torznab" || got.Priority != 4 || got.DownloadClientID == nil {
+		t.Errorf("type = %q priority = %d pin = %v, want torznab, 4 and the pin kept", got.Type, got.Priority, got.DownloadClientID)
+	}
+	stored, _ := f.ih.indexers.GetByID(t.Context(), created.ID)
+	if stored.Type != "torznab" {
+		t.Errorf("stored type = %q", stored.Type)
+	}
+}
+
 // An update body with an empty type means the default type (usenet), which is
 // what the searcher already reads it as. For an indexer that is already usenet
 // it must not count as a change of type, so a pinned client that was switched

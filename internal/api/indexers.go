@@ -461,6 +461,11 @@ func (h *IndexerHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
+	// An explicit empty type means "keep the stored type": saved as empty it
+	// would be read as usenet and flip a torznab indexer's protocol.
+	if idx.Type == "" {
+		idx.Type = existing.Type
+	}
 	// The API key is write-only, so it needs the raw body: the struct decode
 	// above cannot tell an omitted key from an explicitly blank one, and the
 	// web app sends the redacted (blank) value straight back on every save.
