@@ -303,7 +303,7 @@ func TestMainTitleSeriesTitleAndPositionReader(t *testing.T) {
 		t.Errorf("without a series title the library Mistborn still makes the main title another book")
 	}
 
-	wanted := bookContext{seriesPosition: "2"}
+	wanted := bookContext{seriesPosition: "2", otherTitles: []string{"Mistborn", "The Dark Tower"}}
 	wantKept := []string{
 		"Brandon Sanderson - Mistborn Book 2 MP3",
 		"Brandon Sanderson - Mistborn #2 MP3",

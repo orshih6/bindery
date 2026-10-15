@@ -29,13 +29,15 @@ import (
 //     at all. The exception is a subtitle that only numbers the book ("Dune:
 //     Part One", "Foo: I", "Foo: 1"), because releases drop such a subtitle
 //     and keep the main title.
-//  3. A main title only release is dropped when the wanted book is a later
-//     entry that the main title alone cannot be: the stored series position is
-//     2 or more, the subtitle itself numbers the book 2 or more ("Dune: Part
-//     Two"), or the main title is itself the title of another of the author's
-//     books in the library ("Legion" for "Legion: Skin Deep"). The release is
-//     kept if it carries the wanted number right after the main title ("Legion
-//     2"), because then it names the book.
+//  3. A main title only release is dropped on two pieces of positive
+//     evidence: the main title is itself the title of another of the author's
+//     library books that is not the book's series ("Legion" for "Legion: Skin
+//     Deep"), or the subtitle numbers the book 2 or more ("Dune: Part Two") and
+//     the release names a different number. The release is kept if it carries
+//     the wanted number right after the main title ("Legion 2"). A stored
+//     series position of 2 or more is NOT evidence on its own: the plain
+//     "Author - Main (epub)" release is the commonest form of a subtitled book
+//     after the first.
 //
 // A lone main title release with no position, no library title to compare it
 // with, and no full title in the batch stays approved: nothing in the release
@@ -71,8 +73,8 @@ func newSubtitleInfo(title string) subtitleInfo {
 
 // mainTitleOnly judges a release that matched through the main title alone and
 // returns the drop reason, or "" to keep it. identity is the release's identity
-// words joined; anyFull reports whether another result of the given media type carries the
-// full title (see fullTitleCounts).
+// words joined; anyFull reports whether another result of the given media
+// type carries the full title (see fullTitleCounts).
 func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string, anyFull func(mediaType string) bool, primary ...[]string) string {
 	if !si.has {
 		return ""
@@ -89,38 +91,43 @@ func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string,
 	if mt := releaseMediaType(raw); mt != "" && anyFull(mt) {
 		return reasonMainTitleOnlyFullFound
 	}
+	// A subtitle that numbers the book 2 or more: a release that names a
+	// DIFFERENT number is another book. A release that names no number is
+	// not evidence of anything and is kept: a stored series position of 2 or
+	// more is not evidence either, since the plain "Author - Main (epub)"
+	// release is the commonest form of a subtitled book after the first.
 	want := 0
-	sequel := false
-	switch {
-	case si.seriesLike:
-		want, sequel = si.n, true
-	case tr.posKnown && tr.posLo >= 2:
-		sequel = true
-		if tr.posLo == tr.posHi {
-			want = tr.posLo
+	if si.seriesLike {
+		want = si.n
+		nums := numbersAfter(raw, n, primary...)
+		if len(nums) > 0 && !containsInt(nums, want) {
+			return reasonMainTitleOnlySequel
 		}
-	default:
-		for _, p := range primary {
-			if len(p) > 0 && tr.otherFull[strings.Join(p, " ")] {
-				sequel = true
-				if tr.posKnown && tr.posLo == tr.posHi {
-					want = tr.posLo
-				}
-				break
+	}
+	// The main title is itself another of the author's library books (and not
+	// the book's series): the release is that book, unless it carries the
+	// wanted number right after the main title.
+	for _, p := range primary {
+		if len(p) > 0 && tr.otherFull[strings.Join(p, " ")] {
+			if want == 0 && tr.posKnown && tr.posLo == tr.posHi {
+				want = tr.posLo
 			}
-		}
-	}
-	if !sequel {
-		return ""
-	}
-	if want > 0 {
-		for _, got := range numbersAfter(raw, n, primary...) {
-			if got == want {
+			if want > 0 && containsInt(numbersAfter(raw, n, primary...), want) {
 				return ""
 			}
+			return reasonMainTitleOnlySequel
 		}
 	}
-	return reasonMainTitleOnlySequel
+	return ""
+}
+
+func containsInt(xs []int, v int) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -202,7 +209,7 @@ func releaseMediaType(title string) string {
 
 // derivativeWordRe finds the words of a summary, study aid or companion, which
 // is about a book and is not the book.
-var derivativeWordRe = regexp.MustCompile(`(?i)\b(?:summary|summaries|analysis|analyses|study\s+guide|workbook|companion|review|reviews|notes|guide|cliffs?\s*notes|spark\s*notes|highlights|synopsis|key\s+takeaways|insights)\b`)
+var derivativeWordRe = regexp.MustCompile(`(?i)\b(?:summary|summaries|analysis|analyses|study\s+guide|workbook|companion|review|reviews|notes|guide|cheat\s*sheets?|cliffs?\s*notes|spark\s*notes|highlights|synopsis|key\s+takeaways|insights)\b`)
 
 // fullTitleCounts reports whether a result that carries the full title is good
 // evidence that a main title only sibling is not the book (the batch rule).

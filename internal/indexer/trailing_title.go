@@ -233,7 +233,11 @@ type otherTitle struct {
 type trailingRules struct {
 	posLo, posHi int
 	posKnown     bool
-	others       []otherTitle
+	// wantedEndsRoman is set when the wanted title itself ends in a capital
+	// roman numeral ("Henry V", "Rocky II"): rule A then does not read
+	// roman numerals after it.
+	wantedEndsRoman bool
+	others          []otherTitle
 	// otherFull holds the identity words, joined, of every other library
 	// title of any length. Part 2 asks whether the wanted book's main title
 	// is itself another of the author's books.
@@ -246,6 +250,10 @@ type trailingRules struct {
 func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailingRules {
 	tr := &trailingRules{otherFull: map[string]bool{}}
 	tr.posLo, tr.posHi, tr.posKnown = parsePosition(bc.seriesPosition)
+	if f := strings.Fields(title); len(f) > 0 {
+		last := strings.Trim(f[len(f)-1], ".,:;!?()[]")
+		tr.wantedEndsRoman = last != "" && last == strings.ToUpper(last) && romanRe.MatchString(last)
+	}
 
 	cleanedSeries := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(bc.seriesTitle))
 	seriesIdent := titleIdentityKeywords(cleanedSeries)
@@ -470,10 +478,17 @@ func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
 		return ""
 	}
 	num := toks[i]
-	if len(num.text) > 2 || !isAllDigits(num.text) {
-		return ""
+	n := 0
+	switch {
+	case len(num.text) <= 2 && isAllDigits(num.text):
+		n, _ = strconv.Atoi(num.text)
+	case !tr.wantedEndsRoman && num.raw != "I" && num.raw == strings.ToUpper(num.raw) && romanRe.MatchString(num.raw):
+		// A capital roman numeral II to XXX. A lone "I" is the pronoun, and a
+		// title that itself ends in one ("Henry V") is not read this way.
+		if v := romanValue(num.raw); v >= 2 && v <= 30 {
+			n = v
+		}
 	}
-	n, _ := strconv.Atoi(num.text)
 	if n < 2 || (n >= tr.posLo && n <= tr.posHi) {
 		return ""
 	}
@@ -514,11 +529,37 @@ func (tr *trailingRules) otherTitleIn(rest []relTok) string {
 				break
 			}
 		}
-		if present && ContainsPhrase(haystack, ot.ident) {
-			return reasonAnotherTitle
+		if !present {
+			continue
+		}
+		// A library title directly followed by a number, or by a marker word
+		// and a number, is a series label ("Rotten School 12", "The Dark
+		// Tower 1"), not another book. Another book is any occurrence that is
+		// not followed by one.
+		for _, loc := range phraseRegex(ot.ident).FindAllStringIndex(haystack, -1) {
+			if !seriesLabelFollows(haystack[loc[1]:]) {
+				return reasonAnotherTitle
+			}
 		}
 	}
 	return ""
+}
+
+// seriesLabelFollows reports whether the text starts with a series number: a
+// number, or a marker word and a number or number word. A different book whose
+// title really ends with a number is read as a label too; that is a known limit.
+func seriesLabelFollows(after string) bool {
+	f := strings.Fields(after)
+	if len(f) == 0 {
+		return false
+	}
+	if len(f[0]) <= 3 && isAllDigits(f[0]) {
+		return true
+	}
+	if readMarkers[f[0]] && len(f) > 1 {
+		return (len(f[1]) <= 3 && isAllDigits(f[1])) || numberWords[f[1]] > 0
+	}
+	return false
 }
 
 // AuthorTitlesExcluding returns the titles of books other than selfID, for

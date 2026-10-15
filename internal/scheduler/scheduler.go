@@ -1227,7 +1227,12 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 	}
 	var booksRead indexer.AuthorBooksReader
 	if s.books != nil {
-		booksRead = s.books.ListByAuthor
+		// The wanted book's owner scopes the author's titles, as the
+		// interactive search scopes them to the caller. No owner means no
+		// scope, the same fallback ListByAuthorAndUser applies to user 0.
+		booksRead = func(ctx context.Context, authorID int64) ([]models.Book, error) {
+			return s.books.ListByAuthorAndUser(ctx, authorID, book.OwnerUserID)
+		}
 	}
 	crit.SetLibraryContext(ctx, book, seriesRead, booksRead)
 	if s.editions != nil {

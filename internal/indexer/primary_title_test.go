@@ -59,13 +59,6 @@ func TestPrimaryTitleFallbackRejectsAnotherBook(t *testing.T) {
 			},
 		},
 		{
-			name:  "Legion main title only, wanted book is a known later entry",
-			title: "Legion: Skin Deep", author: "Brandon Sanderson",
-			releases:    []string{"Brandon Sanderson - Legion (2012) MP3"},
-			bc:          bookContext{seriesPosition: "2"},
-			wantDropped: map[string]string{"Brandon Sanderson - Legion (2012) MP3": reasonMainTitleOnlySequel},
-		},
-		{
 			name:  "Legion main title only, another result carries the full title",
 			title: "Legion: Skin Deep", author: "Brandon Sanderson",
 			releases: []string{
@@ -86,10 +79,10 @@ func TestPrimaryTitleFallbackRejectsAnotherBook(t *testing.T) {
 			wantDropped: map[string]string{"J.R.R. Tolkien - The Hobbit MP3": reasonMainTitleOnlyFullFound},
 		},
 		{
-			name:  "a later numbered subtitle needs its number",
+			name:  "a numbered subtitle and a release naming a different number",
 			title: "Dune: Part Two", author: "Frank Herbert",
-			releases:    []string{"Frank Herbert - Dune (Unabridged) MP3"},
-			wantDropped: map[string]string{"Frank Herbert - Dune (Unabridged) MP3": reasonMainTitleOnlySequel},
+			releases:    []string{"Frank Herbert - Dune III (Unabridged) MP3"},
+			wantDropped: map[string]string{"Frank Herbert - Dune III (Unabridged) MP3": reasonMainTitleOnlySequel},
 		},
 	}
 	for _, c := range cases {

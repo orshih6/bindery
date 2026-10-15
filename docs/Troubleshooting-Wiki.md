@@ -29,7 +29,11 @@ Two things drop it:
   space), or sits behind a marker word (book, vol, volume, no, number, episode,
   tome, band, part) or a `#`. A number followed by an ordinary word is a count
   and never drops a release: `Title 12 files`, `Title 4 mp3`, `Title 24 bit`,
-  `Title 3 Tapes`, `Title 2 vols`, `Title 2 CD`, `64 kbps`, `12 hours`.
+  `Title 3 Tapes`, `Title 2 vols`, `Title 2 CD`, `64 kbps`, `12 hours`. A
+  capital roman numeral from `II` to `XXX` counts as a number in the same
+  places (`Mistborn III` at position 2 is dropped). A lone `I` is never read,
+  lowercase is never read, and nothing is read after a wanted title that itself
+  ends in a roman numeral (`Henry V`, `Rocky II`).
 - **Another of the author's titles.** If one of the author's other books in your
   library appears in the words after the title, the release is dropped with
   `release names another title after this one`. A title before yours
@@ -39,7 +43,10 @@ Two things drop it:
   library title is also not read as "another title" when it equals, contains or
   is contained in the book's own series title (releases write `Title (Series
   #N)` and `Title - Series N`), when it contains the wanted title (`Dune
-  Messiah` for `Dune`), or when the wanted title contains it.
+  Messiah` for `Dune`), or when the wanted title contains it. A library title
+  that is directly followed by a number, or by a marker word and a number
+  (`Rotten School 12`, `The Dark Tower 1`, `Rotten School Book 12`), is a series
+  label and not another book, even when the wanted book has no series link.
 
 Numbers that are not series numbers never drop a release: `01` (the first book),
 `Part 1 of 2` and `Book 2 of the Stormlight Archive` (a number followed by
@@ -54,6 +61,14 @@ number. So `Rotten School 12` and `Percy Jackson and the Olympians 04` are
 caught only when the book has a series position (it comes from the series data,
 see the Hardcover series page) or the later book is in your library. Set the
 series position on the book to turn the number check on.
+
+Stored series position and release numbering can disagree, and Bindery cannot
+tell which is right: Discworld book 4 stored as position 1 of the `Death`
+series is judged against `Mort 04` and dropped. Only the book's primary series
+position is used. If a book is wrongly dropped for this reason, correct or clear
+its series position. A different book whose title really ends in a number (`Rule
+of Wolves 2`) is read as a series label by the library title rule and is not
+caught.
 
 What else this does not catch: a later book that carries no number and is not in
 your library (`Title - Some Other Book`), a library title that is the wanted
@@ -90,15 +105,17 @@ and three more:
   course.
 - A main title only release is dropped with `release carries only the main
   title, but this book is a later entry or the main title is another of the
-  author's books` when the book's series position is 2 or more, when its
-  subtitle numbers it 2 or more (`Dune: Part Two`), or when the main title is
-  itself the title of another of the author's books in your library (`Legion`
-  for `Legion: Skin Deep`), unless that library title equals, contains or is
-  contained in the book's own series title. It is kept if the release carries
-  the wanted number right after the main title, written as `2`, `02`, `Book 2`,
-  `#2`, `Vol. 2`, a capital roman numeral (`II`), a number word after a marker
-  (`Book Two`), or a season or series form (`S1 Part 2`, `Series 02`, `Season
-  2`).
+  author's books` in two cases, both positive evidence: the main title is itself
+  the title of another of the author's books in your library (`Legion` for
+  `Legion: Skin Deep`), unless that library title equals, contains or is
+  contained in the book's own series title; or the book's subtitle numbers it 2
+  or more (`Dune: Part Two`) and the release names a different number (`Dune
+  III`). A stored series position of 2 or more is NOT a reason by itself: the
+  plain `Author - Caliban's War (epub)` release of `Caliban's War: A Novel` is
+  kept at any position. A release is kept if it carries the wanted number right
+  after the main title, written as `2`, `02`, `Book 2`, `#2`, `Vol. 2`, a
+  capital roman numeral (`II`), a number word after a marker (`Book Two`), or a
+  season or series form (`S1 Part 2`, `Series 02`, `Season 2`).
 - The series number and other title checks above also read what follows the
   main title, so `The High Druid of Shannara 3 - Straken` is not `High Druid of
   Shannara: Jarka Ruus`.
