@@ -1379,7 +1379,7 @@ var usenetJunkRe = regexp.MustCompile(
 func filterUsenetJunk(results []newznab.SearchResult) []newznab.SearchResult {
 	out := make([]newznab.SearchResult, 0, len(results))
 	for _, r := range results {
-		if !usenetJunkRe.MatchString(r.Title) {
+		if usenetJunkReason(r.Title) == "" {
 			out = append(out, r)
 		}
 	}

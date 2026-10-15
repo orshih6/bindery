@@ -80,6 +80,29 @@ otherwise, and Bindery drops releases only on positive evidence. Setting the
 book's series position, or having the main title's own book in your library,
 turns the rule on.
 
+### A search result is one chapter of an audiobook
+
+Some usenet posts carry a single chapter, such as `Terry Goodkind - SOT06 Faith
+of the Fallen Ch63 of 71.mp3`. Bindery drops these before relevance matching,
+with the reason `looks like one chapter or part of a larger post (Ch NN, NN of
+MM)` in the search debug view (stage `usenet-junk`). The same filter runs on the
+free text Search page. A title is a fragment when it has either:
+
+- a chapter marker, `Ch`, `Ch.` or `Chapter`, straight before a number (`Ch63`,
+  `Ch. 5`, `Chapter 12`); or
+- `NN of MM` with MM of 10 or more (`12 of 40`, `Part 3 of 12`), unless the word
+  before NN numbers a book in a series (`Book 3 of 12`, `Vol 2 of 10`),
+
+and it names an audio format (mp3, m4a, m4b, flac, ogg, aac, wav, wma, opus) or
+no format at all. A title that names an ebook format is never dropped by this
+rule. `Part 1 of 2` and other counters with MM under 10 are kept, since a long
+audiobook is often posted as a few parts.
+
+What this does not catch: a fragment posted as `Part 3 of 8`, a fragment with
+only a bare number and no counter word, and a fragment named in another
+language. It can wrongly drop a whole release whose own title contains `NN of
+MM` with MM of 10 or more and no ebook format, such as `12 of 56 Stories`.
+
 These checks use the release name. They do not open the download. A separate
 check does, once the download has finished: Bindery compares an EPUB's own title
 and author with the book it was grabbed for, and for an audiobook compares the
