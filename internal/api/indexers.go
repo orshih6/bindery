@@ -218,12 +218,17 @@ func (h *IndexerHandler) validateDownloadClientPin(ctx context.Context, idx mode
 	if c == nil {
 		return errPinInvalid(fmt.Sprintf("downloadClientId %d: that download client does not exist", *idx.DownloadClientID))
 	}
-	if got := db.ClientProtocol(c.Type); got != idx.Protocol() {
+	// A wrong protocol is refused only when this request sets the pin or the
+	// indexer type. Otherwise an unrelated update, such as disabling the
+	// indexer, would be blocked by a client changed behind the pin's back, and
+	// the grab fails loudly at grab time anyway.
+	pinChanged := stored == nil || stored.DownloadClientID == nil || *stored.DownloadClientID != *idx.DownloadClientID
+	typeChanged := stored == nil || stored.Type != idx.Type
+	if got := db.ClientProtocol(c.Type); got != idx.Protocol() && (pinChanged || typeChanged) {
 		return errPinInvalid(fmt.Sprintf("download client %q is a %s client but this indexer is %s, so it cannot be pinned to it; pick a %s client",
 			c.Name, got, idx.Protocol(), idx.Protocol()))
 	}
-	changed := stored == nil || stored.DownloadClientID == nil || *stored.DownloadClientID != *idx.DownloadClientID
-	if changed && !c.Enabled {
+	if pinChanged && !c.Enabled {
 		return errPinInvalid(fmt.Sprintf("download client %q is disabled; enable it first or pick another", c.Name))
 	}
 	return nil

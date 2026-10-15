@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,6 +57,7 @@ type schedPinFixture struct {
 	indexers  *db.IndexerRepo
 	downloads *db.DownloadRepo
 	history   *db.HistoryRepo
+	database  *sql.DB
 	book      models.Book
 	pub, priv *pinSAB
 	pubC      *models.DownloadClient
@@ -129,7 +131,7 @@ func newSchedPinFixture(t *testing.T) *schedPinFixture {
 		profiles:  db.NewMetadataProfileRepo(database),
 	}
 	return &schedPinFixture{
-		s: s, ctx: ctx, clients: clients, indexers: indexers, downloads: downloads, history: history,
+		s: s, database: database, ctx: ctx, clients: clients, indexers: indexers, downloads: downloads, history: history,
 		book: book, pub: pub, priv: priv, pubC: pubC, privC: privC, idx: idx,
 	}
 }

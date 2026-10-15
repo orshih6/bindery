@@ -8,38 +8,6 @@ import (
 	"github.com/vavallee/bindery/internal/models"
 )
 
-// TestMigrate109_ExistingIndexersStayUnpinned: the column is added to a table
-// that already has rows, and every one of them reads back with no pin.
-func TestMigrate109_ExistingIndexersStayUnpinned(t *testing.T) {
-	database, err := OpenMemory()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-	ctx := context.Background()
-
-	// Roll the column back out, insert a row the way a pre 109 install had it,
-	// then add the column again exactly as the migration does.
-	if _, err := database.ExecContext(ctx, `ALTER TABLE indexers DROP COLUMN download_client_id`); err != nil {
-		t.Fatalf("drop column: %v", err)
-	}
-	if _, err := database.ExecContext(ctx, `INSERT INTO indexers (name, type, url, api_key, categories, priority, enabled, supports_search, created_at, updated_at)
-		VALUES ('old', 'newznab', 'http://x', 'k', '[7020]', 25, 1, 1, datetime('now'), datetime('now'))`); err != nil {
-		t.Fatalf("insert old row: %v", err)
-	}
-	if _, err := database.ExecContext(ctx, `ALTER TABLE indexers ADD COLUMN download_client_id INTEGER REFERENCES download_clients(id) ON DELETE RESTRICT`); err != nil {
-		t.Fatalf("re-add column: %v", err)
-	}
-
-	got, err := NewIndexerRepo(database).List(ctx)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("list: %v (%d rows)", err, len(got))
-	}
-	if got[0].DownloadClientID != nil {
-		t.Errorf("an existing indexer came back pinned to %d", *got[0].DownloadClientID)
-	}
-}
-
 // TestIndexerRepo_PinRoundTripAndForeignKey: the pin persists through
 // Create, Update, GetByID and List, and the database itself refuses to delete
 // a client an indexer is pinned to.

@@ -193,6 +193,23 @@ func SignDownloadURLFor(rawURL, indexerURL, apiKey string) string {
 	return signDownloadURL(rawURL, baseHost, apiKey)
 }
 
+// DownloadHostMatchesIndexer reports whether a download URL is on the host the
+// indexer is configured at, using the same normalisation SignDownloadURLFor
+// uses. Unlike signing it needs no stored key and ignores whether the URL is
+// already signed, so it answers "could this release have come from that
+// indexer" for the cases signing cannot (#3080).
+func DownloadHostMatchesIndexer(rawURL, indexerURL string) bool {
+	base, err := url.Parse(normalizeEndpointURL(indexerURL))
+	if err != nil || base.Host == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, strings.ToLower(base.Host))
+}
+
 // HasAPIKey reports whether a download URL already carries an apikey.
 //
 // It exists so callers can tell "this URL is already signed" apart from "this

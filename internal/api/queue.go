@@ -114,6 +114,24 @@ func isAdminCtx(ctx context.Context) bool {
 // nudge, which would be wrong when clients exist and the pin is the problem.
 const codeIndexerClientUnavailable = "indexer_client_unavailable"
 
+// ambiguousPinError refuses a grab that arrived without an indexer id and that
+// could not be tied to one indexer, while an indexer on the release's host is
+// pinned to a download client (#3080). Sending it to the default client could
+// put a private tracker's release on the public client, so it is not sent.
+type ambiguousPinError struct{ pinned []string }
+
+func (e *ambiguousPinError) Error() string { return e.Message(true) }
+
+// Message names the pinned indexers only for an admin.
+func (e *ambiguousPinError) Message(includeNames bool) string {
+	names := ""
+	if includeNames && len(e.pinned) > 0 {
+		names = " (" + strings.Join(e.pinned, ", ") + ")"
+	}
+	return "this release could not be tied to one indexer, and an indexer on its host is pinned to a download client" + names +
+		". It was not sent to any client. Grab it from the search results so the indexer is known."
+}
+
 // pinnedMessage renders a pin failure for the caller's role.
 func pinnedMessage(ctx context.Context, perr *db.PinnedClientError) string {
 	return perr.Message(isAdminCtx(ctx))
@@ -125,7 +143,11 @@ func pinnedMessage(ctx context.Context, perr *db.PinnedClientError) string {
 // the client; anything else is a storage fault and a generic 500.
 func writeGrabError(w http.ResponseWriter, r *http.Request, err error) {
 	var perr *db.PinnedClientError
+	var aerr *ambiguousPinError
 	switch {
+	case errors.As(err, &aerr):
+		slog.Warn("grab: the release could not be tied to one indexer and a matching indexer is pinned", "method", r.Method, "path", r.URL.Path, "error", aerr.Error())
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": aerr.Message(isAdminCtx(r.Context())), "code": codeIndexerClientUnavailable})
 	case errors.As(err, &perr):
 		slog.Warn("grab: the indexer's pinned download client cannot take the release", "method", r.Method, "path", r.URL.Path, "error", perr.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": pinnedMessage(r.Context(), perr), "code": codeIndexerClientUnavailable})
@@ -150,7 +172,10 @@ const codeNoDownloadClient = "no_download_client"
 // replaced.
 func queueItemMessage(ctx context.Context, err error) string {
 	var perr *db.PinnedClientError
+	var aerr *ambiguousPinError
 	switch {
+	case errors.As(err, &aerr):
+		return aerr.Message(isAdminCtx(ctx))
 	case errors.As(err, &perr):
 		return pinnedMessage(ctx, perr)
 	case errors.Is(err, errNoDownloadClient), errors.Is(err, errAlreadyGrabbed),
@@ -1361,6 +1386,42 @@ func (h *QueueHandler) selectClient(ctx context.Context, protocol, mediaType str
 	return db.PickClientForMediaType(candidates, mediaType), nil
 }
 
+// pinnedIndexerOnHost looks for an indexer pinned to a download client among
+// those on the release URL's host, for a grab that carries no indexer id. None
+// pinned means the grab is unaffected (nil, nil). Exactly one indexer on the
+// host, pinned, is the release's indexer and is returned so its pin applies.
+// Several on the host with at least one pinned cannot be told apart, and the
+// grab is refused with an *ambiguousPinError rather than guessed. A host that
+// matches no indexer carries nothing to act on and is left unpinned: send the
+// indexer id to have the pin apply.
+func (h *QueueHandler) pinnedIndexerOnHost(ctx context.Context, rawURL string) (*models.Indexer, error) {
+	if h.indexers == nil || rawURL == "" {
+		return nil, nil
+	}
+	idxs, err := h.indexers.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var matching []models.Indexer
+	var pinned []string
+	for _, idx := range idxs {
+		if !newznab.DownloadHostMatchesIndexer(rawURL, idx.URL) {
+			continue
+		}
+		matching = append(matching, idx)
+		if idx.DownloadClientID != nil {
+			pinned = append(pinned, idx.Name)
+		}
+	}
+	if len(pinned) == 0 {
+		return nil, nil
+	}
+	if len(matching) == 1 {
+		return &matching[0], nil
+	}
+	return nil, &ambiguousPinError{pinned: pinned}
+}
+
 // clientForGrab picks the client for a grab. An indexer pinned to a download
 // client (#3080) gets exactly that client, whatever the protocol routing, media
 // type or priority would have chosen, or a *db.PinnedClientError when it cannot
@@ -1565,6 +1626,19 @@ func (h *QueueHandler) grab(ctx context.Context, req grabRequest) (*models.Downl
 	// attribution and resolveSeedLimits' per-indexer overrides are lost (#2053).
 	if hostMatched != nil {
 		indexerID = hostMatched
+	}
+	// A grab still unattributed here may nonetheless come from a pinned
+	// indexer: signing cannot attribute a pre signed URL, a keyless indexer or
+	// two indexers sharing a host (#3080). Look at every indexer on the
+	// release's host before the default routing is allowed to pick a client.
+	if indexerID == nil {
+		onHost, err := h.pinnedIndexerOnHost(ctx, req.NZBURL)
+		if err != nil {
+			return nil, err
+		}
+		if onHost != nil {
+			indexerID = &onHost.ID
+		}
 	}
 
 	// The client is chosen only now, after the host match above has settled
