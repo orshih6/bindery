@@ -1005,14 +1005,63 @@ func filterRelevantWithContext(results []newznab.SearchResult, title, author str
 	}
 
 	rules := newTrailingRules(title, bc, authorTokenSets, fullIdentity, fullIdentityElided, primaryIdentity, primaryIdentityElided, seriesIdentity)
+	subtitle := newSubtitleInfo(title)
+
+	authorConflict := func(r newznab.SearchResult) bool {
+		return conflictingTitleAuthor(r.Title, title, authorTokenSets) ||
+			conflictingTitleAuthor(r.Title, primaryTitle(title), authorTokenSets) ||
+			(seriesTitle != "" && conflictingTitleAuthor(r.Title, seriesTitle, authorTokenSets))
+	}
+
+	// evalFull reads one result against the whole title: whether its keywords
+	// and identity match, whether it is approved on them, and why not when
+	// the trailing rules (#3268) reject it. The title is whole in the release
+	// but the release may go on to name another book; a release that carries
+	// the full title and is rejected there is not retried under the shorter
+	// readings, which would only match the same words again.
+	evalFull := func(i int) (keywords, ok bool, trailing string) {
+		r, n := results[i], normTitles[i]
+		identity := strings.Join(titleIdentityWords(r.Title), " ")
+		keywords = tryMatch(n, fullKws) || tryMatchElided(n, fullElided, fullKws)
+		ok = keywords &&
+			identityOK(identity, fullIdentity, fullIdentityElided) &&
+			volumeNumberAgrees(n, title)
+		if ok {
+			if trailing = rules.check(r.Title, n, fullIdentity, fullIdentityElided); trailing != "" {
+				ok = false
+			}
+		}
+		return keywords, ok, trailing
+	}
+
+	// anyFull reports whether some result in the batch carries the whole
+	// title and is approved on it. The main title reading (see
+	// subtitleInfo.mainTitleOnly) is judged against this: a release that
+	// names only the main title is a sibling of one that names the book, not
+	// the book. Computed on first use, so a batch that never reaches the main
+	// title reading pays nothing.
+	anyFullKnown, anyFull := false, false
+	anyFullInBatch := func() bool {
+		if !anyFullKnown {
+			anyFullKnown = true
+			for i, r := range results {
+				if authorConflict(r) {
+					continue
+				}
+				if _, ok, _ := evalFull(i); ok {
+					anyFull = true
+					break
+				}
+			}
+		}
+		return anyFull
+	}
 
 	filtered := make([]newznab.SearchResult, 0, len(results))
 	var dropped []FilterDebug
 	for i, r := range results {
 		n := normTitles[i]
-		if conflictingTitleAuthor(r.Title, title, authorTokenSets) ||
-			conflictingTitleAuthor(r.Title, primaryTitle(title), authorTokenSets) ||
-			(seriesTitle != "" && conflictingTitleAuthor(r.Title, seriesTitle, authorTokenSets)) {
+		if authorConflict(r) {
 			dropped = append(dropped, drop(r, "release names a different author for this title"))
 			continue
 		}
@@ -1021,21 +1070,8 @@ func filterRelevantWithContext(results []newznab.SearchResult, title, author str
 		identity := strings.Join(titleIdentityWords(r.Title), " ")
 
 		// allowFallback=true: each result gets phrase match first, then keyword
-		// fallback if the phrase fails. No batch-level gate.
-		fullKeywords := tryMatch(n, fullKws) || tryMatchElided(n, fullElided, fullKws)
-		fullOK := fullKeywords &&
-			identityOK(identity, fullIdentity, fullIdentityElided) &&
-			volumeNumberAgrees(n, title)
-		// The title is whole in the release; does the release go on to name
-		// another book (#3268)? A release that carries the full title and is
-		// rejected here is not retried under the shorter readings, which
-		// would only match the same words again.
-		trailing := ""
-		if fullOK {
-			if trailing = rules.check(r.Title, n, fullIdentity, fullIdentityElided); trailing != "" {
-				fullOK = false
-			}
-		}
+		// fallback if the phrase fails.
+		fullKeywords, fullOK, trailing := evalFull(i)
 		primaryKeywords, primaryOK := false, false
 		if !fullOK && trailing == "" && len(primaryKws) > 0 && !sameKws(primaryKws, fullKws) {
 			primaryKeywords = tryMatch(n, primaryKws) || tryMatchElided(n, primaryElided, primaryKws)
@@ -1043,7 +1079,12 @@ func filterRelevantWithContext(results []newznab.SearchResult, title, author str
 				identityOK(identity, primaryIdentity, primaryIdentityElided) &&
 				volumeNumberAgrees(n, primaryTitle(title))
 			if primaryOK {
-				if trailing = rules.check(r.Title, n, primaryIdentity, primaryIdentityElided); trailing != "" {
+				if trailing = rules.check(r.Title, n, primaryIdentity, primaryIdentityElided); trailing == "" {
+					// The release carries the main title and not the whole
+					// one; is it still this book (#3268, part 2)?
+					trailing = subtitle.mainTitleOnly(rules, r.Title, n, identity, anyFullInBatch, primaryIdentity, primaryIdentityElided)
+				}
+				if trailing != "" {
 					primaryOK = false
 				}
 			}

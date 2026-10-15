@@ -149,13 +149,18 @@ func TestFilterRelevantSubtitle(t *testing.T) {
 		"Dune.Herbert.epub",               // surname only — post-#563 rejected
 	)
 	got := filterRelevant(results, "Dune: Messiah", "Frank Herbert", nil)
-	for _, title := range []string{
-		"Frank.Herbert.Dune.Messiah.epub",
-		"Frank.Herbert.Dune.epub",
-	} {
-		if !contains(got, title) {
-			t.Errorf("expected %q to pass subtitle filter, got %v", title, resultTitles(got))
-		}
+	if !contains(got, "Frank.Herbert.Dune.Messiah.epub") {
+		t.Errorf("expected the full title release to pass subtitle filter, got %v", resultTitles(got))
+	}
+	// #3268 part 2: the primary-only release is a sibling of the full title
+	// release in the same batch, so it is dropped there. It is still accepted
+	// when nothing in the batch carries the full title.
+	if contains(got, "Frank.Herbert.Dune.epub") {
+		t.Errorf("a primary-only release must be dropped when another result carries the full title, got %v", resultTitles(got))
+	}
+	alone := filterRelevant(toResults("Frank.Herbert.Dune.epub"), "Dune: Messiah", "Frank Herbert", nil)
+	if !contains(alone, "Frank.Herbert.Dune.epub") {
+		t.Errorf("expected the primary-only release to pass when nothing carries the full title, got %v", resultTitles(alone))
 	}
 	// Post-#563: primary-title-only with surname-only author is now rejected.
 	if contains(got, "Dune.Herbert.epub") {

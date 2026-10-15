@@ -47,6 +47,39 @@ for `Dune`, which the title checks above already handle). A book with no stored
 series position is judged on the release name alone, so adding the series
 position on the book's page makes the number check stricter.
 
+### A release has the main title but not the subtitle
+
+A book stored as `Main: Subtitle` is also matched on its main title alone,
+because releases often drop the subtitle (`The Hobbit` for `The Hobbit: Or There
+and Back Again`). That reading is now held to the same checks as the full title,
+and three more:
+
+- If another result in the same search carries the whole title, a main title
+  only release is dropped with `release carries only the main title, and
+  another result carries the full title`. The main title reading is used only
+  when nothing in the search carries the full title. A release that names the
+  subtitle too (`Prelude to Foundation`) is not a main title only release.
+- A subtitle that only numbers the book as the first (`Dune: Part One`, `Foo:
+  I`, `Foo: 1`) is exempt, because releases drop such a subtitle as a matter of
+  course.
+- A main title only release is dropped with `release carries only the main
+  title, but this book is a later entry or the main title is another of the
+  author's books` when the book's series position is 2 or more, when its
+  subtitle numbers it 2 or more (`Dune: Part Two`), or when the main title is
+  itself the title of another of the author's books in your library (`Legion`
+  for `Legion: Skin Deep`). It is kept if the release carries the wanted number
+  right after the main title (`Legion 2`).
+- The series number and other title checks above also read what follows the
+  main title, so `The High Druid of Shannara 3 - Straken` is not `High Druid of
+  Shannara: Jarka Ruus`.
+
+The limit: with no series position, no library title that matches the main
+title, and no full title among the results, a lone `Legion (2012)` is still
+approved for `Legion: Skin Deep`. Nothing in the release or the library says
+otherwise, and Bindery drops releases only on positive evidence. Setting the
+book's series position, or having the main title's own book in your library,
+turns the rule on.
+
 These checks use the release name. They do not open the download. A separate
 check does, once the download has finished: Bindery compares an EPUB's own title
 and author with the book it was grabbed for, and for an audiobook compares the

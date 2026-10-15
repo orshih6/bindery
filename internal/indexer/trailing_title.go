@@ -196,14 +196,24 @@ type trailingRules struct {
 	posKnown     bool
 	others       []otherTitle
 	authorSets   [][]string
+	// otherFull holds the identity words, joined, of every other library
+	// title of any length. Part 2 asks whether the wanted book's main title
+	// is itself another of the author's books.
+	otherFull map[string]bool
 }
 
 // newTrailingRules prepares the rules for one wanted title. wanted are the
 // identity word lists of every reading of the wanted title, used to keep a
 // library title that contains the wanted one out of signal B.
 func newTrailingRules(title string, bc bookContext, authorSets [][]string, wanted ...[]string) *trailingRules {
-	tr := &trailingRules{authorSets: authorSets}
+	tr := &trailingRules{authorSets: authorSets, otherFull: map[string]bool{}}
 	tr.posLo, tr.posHi, tr.posKnown = parsePosition(bc.seriesPosition)
+	for _, raw := range bc.otherTitles {
+		cleaned := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(raw))
+		if ident := titleIdentityKeywords(cleaned); len(ident) > 0 {
+			tr.otherFull[strings.Join(ident, " ")] = true
+		}
+	}
 	if isSetTitle(title) {
 		return tr
 	}
@@ -284,6 +294,22 @@ func parsePosition(s string) (lo, hi int, ok bool) {
 // reading (strict, then the apostrophe elided one). It returns the drop reason,
 // or "" when the release is not read as another book.
 func (tr *trailingRules) check(raw, n string, idents ...[]string) string {
+	toks, k, ok := locateTitleEnd(raw, n, idents...)
+	if !ok {
+		return ""
+	}
+	if reason := tr.seriesNumberAfter(toks, k); reason != "" {
+		return reason
+	}
+	return tr.otherTitleIn(toks[k:])
+}
+
+// locateTitleEnd finds where the wanted title ends in the release: the tokens
+// of raw and the index of the first token after the title. ok is false when
+// the title has no contiguous phrase hit (a release that matched only through
+// the unordered keyword fallback), when nothing follows it, or when the raw
+// tokenisation cannot be trusted.
+func locateTitleEnd(raw, n string, idents ...[]string) (toks []relTok, k int, ok bool) {
 	end := -1
 	for _, ident := range idents {
 		if len(ident) == 0 {
@@ -295,21 +321,34 @@ func (tr *trailingRules) check(raw, n string, idents ...[]string) string {
 		}
 	}
 	if end < 0 {
-		return ""
+		return nil, 0, false
 	}
-	toks, ok := tokenizeRelease(raw)
+	toks, ok = tokenizeRelease(raw)
 	if !ok {
-		return ""
+		return nil, 0, false
 	}
-	k := len(strings.Fields(n[:end]))
+	k = len(strings.Fields(n[:end]))
 	if k >= len(toks) {
-		return ""
+		return nil, 0, false
 	}
-	rest := toks[k:]
-	if reason := tr.seriesNumberAfter(toks, k); reason != "" {
-		return reason
+	return toks, k, true
+}
+
+// numberAfter reads the series number directly after the wanted title, with
+// the same marker words signal A allows ("Title 2", "Title Book 2").
+func numberAfter(raw, n string, idents ...[]string) (int, bool) {
+	toks, k, ok := locateTitleEnd(raw, n, idents...)
+	if !ok {
+		return 0, false
 	}
-	return tr.otherTitleIn(rest)
+	if seriesNumberMarkers[toks[k].text] {
+		k++
+	}
+	if k >= len(toks) || len(toks[k].text) > 2 || !isAllDigits(toks[k].text) {
+		return 0, false
+	}
+	v, _ := strconv.Atoi(toks[k].text)
+	return v, true
 }
 
 // seriesNumberAfter is signal A. toks[k:] is what follows the wanted title.
