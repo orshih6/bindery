@@ -102,6 +102,17 @@ type MatchCriteria struct {
 	// term keeps the flat, capped bonus it has always used rather than
 	// dividing by zero.
 	DurationSeconds int
+	// SeriesPosition is the wanted book's position in its primary series as
+	// stored ("3", "1-3", ""). The relevance filter uses it to tell a release
+	// that names the wanted book's own number from one that names a later book
+	// (#3268). Empty when the book has no series position; the filter then
+	// judges a numbered release on the release name alone.
+	SeriesPosition string
+	// AuthorTitles are the titles of the author's OTHER books in the library
+	// (not the wanted book). The relevance filter rejects a release that goes
+	// on to name one of them after the wanted title (#3268). Empty disables
+	// that rule only.
+	AuthorTitles []string
 }
 
 // CriteriaISBN picks the ISBN to put in MatchCriteria.ISBN for a book, given
@@ -353,7 +364,7 @@ func (s *Searcher) SearchBook(ctx context.Context, indexers []models.Indexer, c 
 	results = dedupe(results)
 	results = filterUsenetJunk(results)
 	results = filterNonBookContent(results)
-	results = filterRelevant(results, c.Title, c.Author, c.AuthorAliases)
+	results, _ = filterRelevantWithContext(results, c.Title, c.Author, c.AuthorAliases, c.context())
 	rankResults(results, c)
 	return results
 }
@@ -899,6 +910,13 @@ func filterRelevant(results []newznab.SearchResult, title, author string, aliase
 // kept for a "Volume 17" title (#2921). One implementation means a guard
 // cannot land in one path and miss the other.
 func filterRelevantDetailed(results []newznab.SearchResult, title, author string, aliases []string) ([]newznab.SearchResult, []FilterDebug) {
+	return filterRelevantWithContext(results, title, author, aliases, bookContext{})
+}
+
+// filterRelevantWithContext is filterRelevantDetailed given what the library
+// knows about the wanted book (see bookContext). A zero bookContext is
+// filterRelevantDetailed exactly.
+func filterRelevantWithContext(results []newznab.SearchResult, title, author string, aliases []string, bc bookContext) ([]newznab.SearchResult, []FilterDebug) {
 	// Strip edition qualifiers ("(German Edition)" etc.) and normalize
 	// smart quotes before tokenizing, so they don't become spurious keywords.
 	// Format qualifiers mid title ("(Light Novel)") go too, matching what the
@@ -986,6 +1004,8 @@ func filterRelevantDetailed(results []newznab.SearchResult, title, author string
 		return FilterDebug{Title: r.Title, IndexerName: r.IndexerName, Stage: "relevance", Reason: reason}
 	}
 
+	rules := newTrailingRules(title, bc, authorTokenSets, fullIdentity, fullIdentityElided, primaryIdentity, primaryIdentityElided, seriesIdentity)
+
 	filtered := make([]newznab.SearchResult, 0, len(results))
 	var dropped []FilterDebug
 	for i, r := range results {
@@ -1006,26 +1026,48 @@ func filterRelevantDetailed(results []newznab.SearchResult, title, author string
 		fullOK := fullKeywords &&
 			identityOK(identity, fullIdentity, fullIdentityElided) &&
 			volumeNumberAgrees(n, title)
+		// The title is whole in the release; does the release go on to name
+		// another book (#3268)? A release that carries the full title and is
+		// rejected here is not retried under the shorter readings, which
+		// would only match the same words again.
+		trailing := ""
+		if fullOK {
+			if trailing = rules.check(r.Title, n, fullIdentity, fullIdentityElided); trailing != "" {
+				fullOK = false
+			}
+		}
 		primaryKeywords, primaryOK := false, false
-		if !fullOK && len(primaryKws) > 0 && !sameKws(primaryKws, fullKws) {
+		if !fullOK && trailing == "" && len(primaryKws) > 0 && !sameKws(primaryKws, fullKws) {
 			primaryKeywords = tryMatch(n, primaryKws) || tryMatchElided(n, primaryElided, primaryKws)
 			primaryOK = primaryKeywords &&
 				identityOK(identity, primaryIdentity, primaryIdentityElided) &&
 				volumeNumberAgrees(n, primaryTitle(title))
+			if primaryOK {
+				if trailing = rules.check(r.Title, n, primaryIdentity, primaryIdentityElided); trailing != "" {
+					primaryOK = false
+				}
+			}
 		}
 		seriesKeywords, seriesOK := false, false
-		if !fullOK && !primaryOK && len(seriesKws) > 0 {
+		if !fullOK && !primaryOK && trailing == "" && len(seriesKws) > 0 {
 			seriesKeywords = tryMatch(n, seriesKws)
 			seriesOK = seriesKeywords &&
 				(len(seriesIdentity) < 2 || ContainsPhrase(identity, seriesIdentity)) &&
 				volumeNumberAgrees(n, seriesTitle)
+			if seriesOK {
+				if trailing = rules.check(r.Title, n, seriesIdentity); trailing != "" {
+					seriesOK = false
+				}
+			}
 		}
 		if fullOK || primaryOK || seriesOK {
 			filtered = append(filtered, r)
 			continue
 		}
 		reason := "title/author keywords did not match release name"
-		if fullKeywords || primaryKeywords || seriesKeywords {
+		if trailing != "" {
+			reason = trailing
+		} else if fullKeywords || primaryKeywords || seriesKeywords {
 			// The keywords are all there but the release's title is not this
 			// one: other words sit between them, as "12 Rules for Life" inside
 			// "12 More Rules for Life", or a number differs, as "Volume 16"

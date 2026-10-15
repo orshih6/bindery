@@ -243,7 +243,7 @@ func (s *Searcher) SearchBookWithDebug(ctx context.Context, indexers []models.In
 	results = filterNonBookContent(results)
 	dbg.Pipeline.AfterNonBookContent = len(results)
 
-	results, relFilters := filterRelevantDebug(results, c.Title, c.Author, c.AuthorAliases)
+	results, relFilters := filterRelevantWithContext(results, c.Title, c.Author, c.AuthorAliases, c.context())
 	dbg.Filters = append(dbg.Filters, relFilters...)
 	dbg.Pipeline.AfterRelevance = len(results)
 

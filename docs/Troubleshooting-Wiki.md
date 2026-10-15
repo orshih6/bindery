@@ -12,6 +12,41 @@ Title-only releases, connecting words, file-format labels and narrator credits
 remain supported. Unrecognised trailing text can be conservatively rejected;
 inspect the release's title and author rather than relying only on shared words.
 
+### A release names the next book in the series
+
+Matching also reads what comes AFTER your title. A release that has the whole
+title and then goes on to name another book is dropped, with a reason in the
+search debug view (`GET /search/last-debug`, and the interactive search panel).
+Two things drop it:
+
+- **A later series number.** `King of Scars 02 - Rule of Wolves` is not
+  `King of Scars`. A number of 2 or more straight after the title (also
+  `[Rotten School 12]`, `Series Book 3`) drops the release with the reason
+  `release names a different series number after this title` when Bindery
+  knows the book's series position and the number differs. When the book has
+  no position, the number only drops the release if a dash follows it and
+  ordinary title words come after the dash (`Title 02 - Rule of Wolves`); a
+  bare `Title 02`, `Title 02 (Unabridged)` or `Title 02 - Unabridged` is kept.
+- **Another of the author's titles.** If one of the author's other books in your
+  library appears in the words after the title, the release is dropped with
+  `release names another title after this one`. A title before yours
+  (`Belgariad 2 - Queen of Sorcery`) is a series prefix and is fine. Only
+  library titles of two or more significant words count, and the rule is off
+  when the wanted book is itself a set (a set release lists its books).
+
+Numbers that are not series numbers never drop a release: `01` (the first book),
+`Part 1 of 2` and `Book 2 of the Stormlight Archive` (a number followed by
+"of"), a four digit year, `64 kbps`, `2 CD`, `12 hours`, and a number equal to
+the book's own position.
+
+What this does not catch: a later book that carries no number and is not in your
+library (`Title - Some Other Book`), a number joined to the title without a
+separator the filter can read (`Title2`), a number written as a word (`Title
+Two`), and a release that names only a shorter or longer title (`Dune Messiah`
+for `Dune`, which the title checks above already handle). A book with no stored
+series position is judged on the release name alone, so adding the series
+position on the book's page makes the number check stricter.
+
 These checks use the release name. They do not open the download. A separate
 check does, once the download has finished: Bindery compares an EPUB's own title
 and author with the book it was grabbed for, and for an audiobook compares the

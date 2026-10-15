@@ -226,6 +226,7 @@ type Scheduler struct {
 	profiles        *db.MetadataProfileRepo // optional; applies profile language filters to auto-grab
 	qualityProfiles *db.QualityProfileRepo  // optional; enforces the profile's allowed formats on auto-grab (#1693)
 	editions        *db.EditionRepo         // optional; supplies the book ISBN the ranker's exact-match bonus needs (#1724)
+	series          *db.SeriesRepo          // optional; supplies the wanted book's series position to the relevance filter (#3268)
 	calibreSyncer   CalibreSyncer           // optional; nil if Calibre is not configured
 	recommender     RecommendationEngine    // optional; generates recommendations
 	// operatorUserID resolves the user the recommendation job writes under.
@@ -334,6 +335,14 @@ func (s *Scheduler) WithHistory(h *db.HistoryRepo) {
 // in MatchCriteria for non-latin author name matching. Must be called before Start.
 func (s *Scheduler) WithAliases(aliases *db.AuthorAliasRepo) {
 	s.aliases = aliases
+}
+
+// WithSeries attaches the series repo so auto-grab can give the relevance
+// filter the wanted book's position in its series (#3268). Optional: without
+// it the filter judges a numbered release on the release name alone. Must be
+// called before Start.
+func (s *Scheduler) WithSeries(series *db.SeriesRepo) {
+	s.series = series
 }
 
 // WithMetadataProfiles attaches the metadata profile repo so auto-grab can
@@ -1205,6 +1214,24 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 	}
 	if book.ReleaseDate != nil {
 		crit.Year = book.ReleaseDate.Year()
+	}
+	// What the library knows about the wanted book lets the relevance filter
+	// tell a release of this book from the next one in its series (#3268).
+	// Two reads per search, never per release; either failing only leaves
+	// the rules that need it quiet.
+	if s.series != nil {
+		if _, pos, err := s.series.GetPrimarySeriesForBook(ctx, book.ID); err != nil {
+			slog.Warn("failed to load series position for search", "book_id", book.ID, "error", err)
+		} else {
+			crit.SeriesPosition = pos
+		}
+	}
+	if s.books != nil {
+		if bs, err := s.books.ListByAuthor(ctx, book.AuthorID); err != nil {
+			slog.Warn("failed to load the author's titles for search", "author_id", book.AuthorID, "error", err)
+		} else {
+			crit.AuthorTitles = indexer.AuthorTitlesExcluding(book.ID, bs)
+		}
 	}
 	if s.editions != nil {
 		if eds, err := s.editions.ListByBook(ctx, book.ID); err != nil {

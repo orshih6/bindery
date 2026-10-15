@@ -537,6 +537,7 @@ func main() {
 		authorRepo, bookRepo, indexerRepo, downloadRepo, dlClientRepo, settingsRepo, blocklistRepo)
 	sched.WithHistory(historyRepo)
 	sched.WithAliases(authorAliasRepo)
+	sched.WithSeries(seriesRepo)
 	sched.WithMetadataProfiles(metadataProfileRepo)
 	sched.WithQualityProfiles(qualityProfileRepo)
 	sched.WithEditions(editionRepo)
@@ -664,6 +665,7 @@ func main() {
 	searchResults := api.NewSearchResultRegistry()
 	indexerHandler := api.NewIndexerHandler(indexerRepo, bookRepo, authorRepo, metadataProfileRepo, idxSearcher, settingsRepo, blocklistRepo).
 		WithAliases(authorAliasRepo).
+		WithSeries(seriesRepo).
 		WithQualityProfiles(qualityProfileRepo).
 		WithEditions(editionRepo).
 		WithDownloadClients(dlClientRepo).

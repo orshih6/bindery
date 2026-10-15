@@ -40,6 +40,7 @@ type IndexerHandler struct {
 	books     *db.BookRepo
 	authors   *db.AuthorRepo
 	aliases   *db.AuthorAliasRepo
+	series    *db.SeriesRepo // optional; the wanted book's series position for the relevance filter (#3268)
 	profiles  *db.MetadataProfileRepo
 	searcher  indexerSearcher
 	settings  *db.SettingsRepo
@@ -81,6 +82,13 @@ func (h *IndexerHandler) WithSearchDebugLog(l *indexer.DebugLog) *IndexerHandler
 // download client pin (#3080) is validated against on save.
 func (h *IndexerHandler) WithDownloadClients(clients *db.DownloadClientRepo) *IndexerHandler {
 	h.clients = clients
+	return h
+}
+
+// WithSeries attaches the series repo so interactive search can give the
+// relevance filter the wanted book's series position (#3268). Optional.
+func (h *IndexerHandler) WithSeries(series *db.SeriesRepo) *IndexerHandler {
+	h.series = series
 	return h
 }
 
@@ -685,6 +693,21 @@ func (h *IndexerHandler) SearchBook(w http.ResponseWriter, r *http.Request) {
 	}
 	if book.ReleaseDate != nil {
 		crit.Year = book.ReleaseDate.Year()
+	}
+	// What the library knows about the wanted book, for the relevance filter
+	// (#3268). Two reads per search; the author's titles are scoped to the
+	// caller like every other book listing.
+	if h.series != nil {
+		if _, pos, err := h.series.GetPrimarySeriesForBook(r.Context(), book.ID); err != nil {
+			slog.Warn("failed to load series position for search", "book_id", book.ID, "error", err)
+		} else {
+			crit.SeriesPosition = pos
+		}
+	}
+	if bs, err := h.books.ListByAuthorAndUser(r.Context(), book.AuthorID, auth.UserIDFromContext(r.Context())); err != nil {
+		slog.Warn("failed to load the author's titles for search", "author_id", book.AuthorID, "error", err)
+	} else {
+		crit.AuthorTitles = indexer.AuthorTitlesExcluding(book.ID, bs)
 	}
 	if h.editions != nil {
 		if eds, err := h.editions.ListByBook(r.Context(), book.ID); err != nil {

@@ -1,0 +1,2 @@
+### Fixed
+- **Search no longer approves the next book in a series** (#3268) - a release that names your book and then goes on to name another one, such as "King of Scars 02 - Rule of Wolves" for "King of Scars" or "[Rotten School 12] - Battle of the Dum Diddys" for "Rotten School", is now dropped from automatic and interactive search, with the reason shown in the search debug view. Bindery uses the book's series position and the author's other titles in your library when it has them. Reported by Broomfundel and foobarbigtime.
