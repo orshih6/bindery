@@ -33,7 +33,10 @@ type indexerSearcher interface {
 }
 
 type IndexerHandler struct {
-	indexers  *db.IndexerRepo
+	indexers *db.IndexerRepo
+	// clients validates a download client pin (#3080) on save. Optional: when
+	// nil, any pin is refused rather than stored unchecked.
+	clients   *db.DownloadClientRepo
 	books     *db.BookRepo
 	authors   *db.AuthorRepo
 	aliases   *db.AuthorAliasRepo
@@ -71,6 +74,13 @@ func (h *IndexerHandler) WithSearchDebugLog(l *indexer.DebugLog) *IndexerHandler
 	if l != nil {
 		h.lastDebug = l
 	}
+	return h
+}
+
+// WithDownloadClients attaches the download client repo, which a per-indexer
+// download client pin (#3080) is validated against on save.
+func (h *IndexerHandler) WithDownloadClients(clients *db.DownloadClientRepo) *IndexerHandler {
+	h.clients = clients
 	return h
 }
 
@@ -187,6 +197,55 @@ func validateDailyQueryLimit(idx models.Indexer) error {
 		return errors.New("dailyQueryLimit must be zero or greater")
 	}
 	return nil
+}
+
+// validateDownloadClientPin checks an indexer's download client pin (#3080) on
+// save. The client must exist and serve the indexer's protocol. It must also be
+// enabled, but only when the pin is new or changed: disabling a client is
+// allowed, and an unrelated edit of an indexer pinned to a disabled client has
+// to keep saving. A disabled pinned client fails its grabs instead.
+func (h *IndexerHandler) validateDownloadClientPin(ctx context.Context, idx models.Indexer, stored *models.Indexer) error {
+	if idx.DownloadClientID == nil {
+		return nil
+	}
+	var c *models.DownloadClient
+	if h.clients != nil {
+		var err error
+		if c, err = h.clients.GetByID(ctx, *idx.DownloadClientID); err != nil {
+			return err
+		}
+	}
+	if c == nil {
+		return errPinInvalid(fmt.Sprintf("downloadClientId %d: that download client does not exist", *idx.DownloadClientID))
+	}
+	if got := db.ClientProtocol(c.Type); got != idx.Protocol() {
+		return errPinInvalid(fmt.Sprintf("download client %q is a %s client but this indexer is %s, so it cannot be pinned to it; pick a %s client",
+			c.Name, got, idx.Protocol(), idx.Protocol()))
+	}
+	changed := stored == nil || stored.DownloadClientID == nil || *stored.DownloadClientID != *idx.DownloadClientID
+	if changed && !c.Enabled {
+		return errPinInvalid(fmt.Sprintf("download client %q is disabled; enable it first or pick another", c.Name))
+	}
+	return nil
+}
+
+// pinInvalidError is a 400 about the download client pin, as opposed to a
+// storage failure.
+type pinInvalidError string
+
+func (e pinInvalidError) Error() string { return string(e) }
+
+func errPinInvalid(msg string) error { return pinInvalidError(msg) }
+
+// writePinError answers a failed validateDownloadClientPin: a 400 for a bad
+// pin, a generic 500 for a storage fault.
+func writePinError(w http.ResponseWriter, r *http.Request, err error) {
+	var bad pinInvalidError
+	if errors.As(err, &bad) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": bad.Error()})
+		return
+	}
+	writeServerError(w, r, err)
 }
 
 // maxSeedTimeMinutes bounds the per-indexer seed time limits (#2206) at ten
@@ -311,6 +370,10 @@ func (h *IndexerHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if idx.Type == "" {
 		idx.Type = "newznab"
 	}
+	if err := h.validateDownloadClientPin(r.Context(), idx, nil); err != nil {
+		writePinError(w, r, err)
+		return
+	}
 	if len(idx.Categories) == 0 {
 		// Books (7000 parent, 7020 ebook) + Audio/Audiobook (3030).
 		// The searcher filters per-media-type at query time.
@@ -409,6 +472,10 @@ func (h *IndexerHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateSeedTimeLimits(idx); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := h.validateDownloadClientPin(r.Context(), idx, existing); err != nil {
+		writePinError(w, r, err)
 		return
 	}
 	idx.ID = id

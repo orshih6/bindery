@@ -115,6 +115,15 @@ type Indexer struct {
 	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
+// Protocol is the release protocol this indexer serves: torznab is torrent and
+// everything else is usenet, the same mapping the searcher stamps on results.
+func (i Indexer) Protocol() string {
+	if i.Type == "torznab" {
+		return "torrent"
+	}
+	return "usenet"
+}
+
 // NeedsAttention reports whether the last search against this indexer failed
 // with something only a human can fix: Newznab's 1xx range (100 bad
 // credentials, 101 account suspended, 102 VPN forbidden). A 5xx rate limit and

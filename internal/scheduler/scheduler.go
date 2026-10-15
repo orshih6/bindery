@@ -6,6 +6,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -999,6 +1000,39 @@ func (s *Scheduler) resolveAllowedLanguages(ctx context.Context, author *models.
 	return models.ParseAllowedLanguages(p.AllowedLanguages)
 }
 
+// pinnedClient returns the download client the release's indexer is pinned to
+// (#3080), or (nil, nil) when the indexer has no pin. A pin that cannot be
+// honoured is a *db.PinnedClientError, never a different client.
+func (s *Scheduler) pinnedClient(ctx context.Context, res *newznab.SearchResult) (*models.DownloadClient, error) {
+	if s.indexers == nil || res.IndexerID == 0 {
+		return nil, nil
+	}
+	idx, err := s.indexers.GetByID(ctx, res.IndexerID)
+	if err != nil {
+		return nil, err
+	}
+	if idx == nil || idx.DownloadClientID == nil {
+		return nil, nil
+	}
+	return s.clients.ResolvePinnedClient(ctx, idx, res.Protocol)
+}
+
+// recordPinnedFailure writes the refused grab to History, so it is not only a
+// log line. History is readable by every user, so it names the indexer and not
+// the client; the log line carries both.
+func (s *Scheduler) recordPinnedFailure(ctx context.Context, bookID int64, res *newznab.SearchResult, perr *db.PinnedClientError) {
+	if s.history == nil {
+		return
+	}
+	data, _ := json.Marshal(map[string]any{"guid": res.GUID, "message": perr.Message(false)})
+	_ = s.history.Create(ctx, &models.HistoryEvent{
+		BookID:      &bookID,
+		EventType:   models.HistoryEventDownloadFailed,
+		SourceTitle: res.Title,
+		Data:        string(data),
+	})
+}
+
 // resolveSeedLimits looks up the per-indexer seed ratio (#883) and seed time
 // (#2206) overrides for the indexer a release was grabbed from. Each is nil
 // (no override) when the indexer repo is unset, the id is zero, the lookup
@@ -1262,13 +1296,31 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 	}
 	approved = 1
 
-	candidates, err := s.clients.GetEnabledByProtocol(ctx, best.Protocol)
-	if err != nil {
-		slog.Error("SearchAndGrabBook: failed to list download clients", "protocol", best.Protocol, "error", err)
+	// An indexer pinned to a download client (#3080) sends every grab to that
+	// client or fails. There is deliberately no fallback to the default pick.
+	client, pinErr := s.pinnedClient(ctx, best)
+	if pinErr != nil {
+		var perr *db.PinnedClientError
+		if errors.As(pinErr, &perr) {
+			slog.Warn("SearchAndGrabBook: the indexer's pinned download client cannot take the grab",
+				"book", book.Title, "release", best.Title, "error", perr.Error())
+			s.recordPinnedFailure(ctx, book.ID, best, perr)
+			outcome = "pinned download client unavailable"
+			return
+		}
+		slog.Error("SearchAndGrabBook: failed to resolve the indexer's pinned download client", "indexer", best.IndexerName, "error", pinErr)
 		outcome = "download client lookup failed"
 		return
 	}
-	client := db.PickClientForMediaType(candidates, mediaType)
+	if client == nil {
+		candidates, err := s.clients.GetEnabledByProtocol(ctx, best.Protocol)
+		if err != nil {
+			slog.Error("SearchAndGrabBook: failed to list download clients", "protocol", best.Protocol, "error", err)
+			outcome = "download client lookup failed"
+			return
+		}
+		client = db.PickClientForMediaType(candidates, mediaType)
+	}
 	// No cross-protocol fallback: a usenet release must not be pushed to a
 	// torrent client (qBittorrent would accept the .nzb URL, fail to parse it
 	// as a torrent, and report "hash could not be determined"), and vice versa.
@@ -1361,7 +1413,7 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 		GlobalRemap:          s.downloadPathRemap,
 	}.WithSeedLimits(s.resolveSeedLimits(ctx, best.IndexerID)))
 	if err != nil {
-		slog.Error("SearchAndGrabBook: failed to send to downloader", "client", client.Type, "title", best.Title, "error", err)
+		slog.Error("SearchAndGrabBook: failed to send to downloader", "client", client.Type, "client_name", client.Name, "indexer", best.IndexerName, "title", best.Title, "error", err)
 		if setErr := s.downloads.SetError(ctx, dl.ID, err.Error()); setErr != nil {
 			slog.Warn("failed to persist download error", "download_id", dl.ID, "error", setErr)
 		}

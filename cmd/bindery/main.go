@@ -666,6 +666,7 @@ func main() {
 		WithAliases(authorAliasRepo).
 		WithQualityProfiles(qualityProfileRepo).
 		WithEditions(editionRepo).
+		WithDownloadClients(dlClientRepo).
 		WithSearchResults(searchResults).
 		WithSearchDebugLog(searchDebugLog)
 	if clients, err := dlClientRepo.List(ctxBoot); err == nil {
