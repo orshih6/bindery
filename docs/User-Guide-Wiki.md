@@ -424,6 +424,32 @@ book set to both formats is still held for its sibling and released with it. Aud
 the indexer, and why the category (default `books`) must already exist in the
 client. Bindery fetches the .torrent/NZB itself and hands it over.
 
+**Pinning an indexer to a download client.** Settings → Indexers has a
+**Download client** dropdown on every indexer. Leave it on *Default* and
+nothing changes: Bindery picks the client by protocol, priority and media type
+as before. Pick a client and every grab from that indexer goes to that client,
+whether it came from the scheduled search, the search page, the Pending tab, or
+Retry download on the Queue. This is how you keep a private tracker's torrents
+on a separate qBittorrent (its own VPN, port or seeding policy) from your public
+one. The list shows only enabled clients of the indexer's protocol, and saving a
+pin to a client of the other protocol is refused.
+
+* **A pin wins over everything else.** It overrides the client's priority and
+  its media type or category routing: an audiobook from a pinned indexer goes to
+  the pinned client even if another client has an audiobook category.
+* **There is no fallback.** If the pinned client is disabled, missing or of the
+  wrong protocol, or does not answer, the grab fails with a message naming the
+  indexer and the client, and nothing is sent to any other client. In the
+  scheduler the failure shows in History and the log. The indexer's row in
+  Settings shows an amber warning while its pinned client is disabled. Enable
+  the client or pick another one and the next grab goes through.
+* **A pinned client cannot be deleted.** Deleting a download client that an
+  indexer is pinned to is refused (HTTP 409) with the indexer names. Choose
+  another client for those indexers, or set them back to *Default*, first.
+  Disabling the client is allowed.
+* **A Prowlarr sync keeps the pin.** It is local configuration like priority and
+  the seed limits.
+
 **Seeding limits.** A torrent indexer can carry its own seeding rules in
 Settings → Indexers, so a private tracker's minimum is met without changing the
 client's global rules for everything else. **Seed ratio** stops seeding at that

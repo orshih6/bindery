@@ -538,6 +538,30 @@ value is rejected with 400. `GET /indexer` and `GET /indexer/{id}` also return
 `dailyQueriesUsed` on capped indexers, which is a display figure summed from the
 stored hourly buckets and lags the live tally by up to one flush interval.
 
+#### Per-indexer download client pin
+
+`downloadClientId` on an indexer pins every grab from it to one download client
+(#3080). `null` and omitted on create mean no pin, which keeps the usual routing.
+Omitted on `PUT` keeps the stored pin, and `null` clears it. The client must exist
+and its protocol must match the indexer's (`torznab` is torrent, `newznab` is
+usenet), otherwise `POST` and `PUT` answer `400` with the reason. A client that is
+disabled is refused for a new or changed pin, but an unrelated edit of an
+indexer already pinned to a client that was disabled later still saves.
+
+A pinned grab ignores the client's priority and media type routing. If the pinned
+client is disabled, missing or of the wrong protocol, the grab fails and no other
+client is tried: `POST /queue/grab`, `POST /queue/{id}/retry`, the bulk retry and
+`POST /pending/{id}/grab` answer `400` with `code: "indexer_client_unavailable"`
+and a message naming the indexer (and the client, for admins). A client that is
+enabled but does not answer is the usual `502`, with the message extended to say
+the indexer is pinned and no other client was tried. The field is only returned by
+the admin only indexer endpoints.
+
+`DELETE /downloadclient/{id}` answers `409` while any indexer is pinned to the
+client, with `error` and an `indexers` array of their names. Disabling the client
+with `PUT` is not refused. A Prowlarr sync, and any other update from outside,
+keeps the pin.
+
 #### Per-indexer seed limits
 
 Three optional overrides are applied to a torrent grabbed from the indexer:

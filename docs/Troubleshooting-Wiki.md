@@ -249,6 +249,23 @@ A Queue row in `failed` never produced a file: the grab did not reach the downlo
 
 To retry in bulk, tick the rows and use **Retry selected**, or use **Retry all failed** above the list, which covers both stages: an import failure has its import re-armed, a failed download has its release re-sent. Both ask for confirmation when a re-send is in the batch, because that hands work back to your download client.
 
+### A grab fails with "indexer ... is pinned to download client ..."
+
+The indexer has a **Download client** set in Settings → Indexers, and that client
+cannot take the grab. The message says which of three things is wrong: the client
+is **disabled** (enable it in Settings → Download Clients), it **no longer
+exists** (choose another client on the indexer), or it is the **wrong protocol**
+(a torrent client on a usenet indexer, usually because the client's type was
+changed after the pin). If the client is enabled but the message says the
+release could not be sent, the client is not answering: check that it is running
+and reachable from Bindery.
+
+Bindery will not send the release to a different client. That is deliberate: the
+pin exists so a private tracker's torrents never reach your public client. To
+send the indexer's grabs through the normal routing again, set its **Download
+client** back to *Default*. Failed scheduled grabs appear in History, and the
+Queue row of a failed grab offers **Retry download** once the cause is fixed.
+
 ### The Queue looks empty, or shorter than it should be
 
 Look for a banner above the list saying *Could not reach `<client>`. This list may be incomplete*. Bindery gives each download client a short deadline when it renders the Queue, and a client that misses it is dropped from that render, so its rows are missing until the next poll succeeds. The rows and the downloads themselves are fine. Check the client is up and reachable at the host and port in **Settings → Download clients** (its **Test** button is the quickest answer), and remember a client that is up but very slow to answer will do this intermittently.
