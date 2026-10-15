@@ -47,7 +47,7 @@ var (
 	chapterMarkerRe = regexp.MustCompile(`(?i)\b(?:ch|chapter)\.?\s*\d{1,3}\b`)
 	nOfMRe          = regexp.MustCompile(`(?i)\b(\d{1,3})\s*of\s*(\d{2,3})\b`)
 	audioFormatRe   = regexp.MustCompile(`(?i)\b(?:mp3|m4a|m4b|flac|ogg|aac|wav|wma|opus)\b`)
-	ebookFormatRe   = regexp.MustCompile(`(?i)\b(?:epub|azw3?|mobi|pdf|djvu|cbr|cbz|fb2|lit|rtf|txt)\b`)
+	ebookFormatRe   = regexp.MustCompile(`(?i)\b(?:epub3?|kepub|azw3?|mobi|pdf|djvu|cbr|cbz|fb2|lit|prc|rtf|txt|doc|docx|kfx|ebook|html?)\b`)
 	// precedingWordRe captures the last word before an index.
 	precedingWordRe = regexp.MustCompile(`(?i)([a-z]+)\.?\s*#?\s*$`)
 )
@@ -57,16 +57,25 @@ var (
 var seriesCountWords = map[string]bool{
 	"book": true, "books": true, "bk": true, "vol": true, "volume": true,
 	"series": true, "no": true, "number": true, "novel": true,
+	"tome": true, "band": true, "season": true, "episode": true, "issue": true,
+	"disc": true, "cd": true,
 }
 
 // isChapterFragment reports whether title is a per-chapter or per-slice post,
 // as described above.
 func isChapterFragment(title string) bool {
+	// An underscore is a word character to a regexp but a space to a release
+	// name ("Author_Title_Ch63_of_71_mp3").
+	title = strings.ReplaceAll(title, "_", " ")
 	counter := chapterMarkerRe.MatchString(title)
 	if !counter {
 		for _, m := range nOfMRe.FindAllStringSubmatchIndex(title, -1) {
 			total, _ := strconv.Atoi(title[m[4]:m[5]])
 			if total < 10 {
+				continue
+			}
+			before := strings.TrimRight(title[:m[0]], " ")
+			if strings.HasSuffix(before, "#") {
 				continue
 			}
 			if w := precedingWordRe.FindStringSubmatch(title[:m[0]]); w != nil && seriesCountWords[strings.ToLower(w[1])] {

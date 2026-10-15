@@ -41,14 +41,14 @@ func TestTrailingTitleTokenizeKeepsSeparators(t *testing.T) {
 	if strings.Join(got, " ") != want {
 		t.Fatalf("tokens = %q, want %q", strings.Join(got, " "), want)
 	}
-	if !dashBefore(toks[1], toks[2]) {
+	if !punctBefore(toks[2]) {
 		t.Errorf("dash before king not seen, sep=%q", toks[2].sep)
 	}
-	if !dashBefore(toks[5], toks[6]) {
-		t.Errorf("a number running into a word by a hyphen should read as a dash")
+	if !punctBefore(toks[6]) {
+		t.Errorf("a hyphen after the number is punctuation, sep=%q", toks[6].sep)
 	}
-	if dashBefore(relTok{text: "spider"}, relTok{text: "man", sep: "-"}) {
-		t.Errorf("a hyphen between two words is a compound, not a dash")
+	if punctBefore(toks[7]) {
+		t.Errorf("a dot is a space in a release name, sep=%q", toks[7].sep)
 	}
 }
 

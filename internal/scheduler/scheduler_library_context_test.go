@@ -66,6 +66,9 @@ func TestSearchAndGrabFormat_CarriesSeriesPositionAndAuthorTitles(t *testing.T) 
 
 	s.searchAndGrabFormat(ctx, wanted, models.MediaTypeAudiobook, nil)
 
+	if ss.lastCrit.SeriesTitle != "Nikolai Duology" {
+		t.Errorf("SeriesTitle = %q, want %q", ss.lastCrit.SeriesTitle, "Nikolai Duology")
+	}
 	if ss.lastCrit.SeriesPosition != "1" {
 		t.Errorf("SeriesPosition = %q, want %q", ss.lastCrit.SeriesPosition, "1")
 	}

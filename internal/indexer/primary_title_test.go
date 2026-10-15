@@ -39,12 +39,6 @@ func TestPrimaryTitleFallbackRejectsAnotherBook(t *testing.T) {
 		wantDropped   map[string]string
 	}{
 		{
-			name:  "High Druid 3 - Straken, position unknown, nothing carries the full title",
-			title: "High Druid of Shannara: Jarka Ruus", author: "Terry Brooks",
-			releases:    []string{"Terry Brooks - The High Druid of Shannara 3 - Straken MP3"},
-			wantDropped: map[string]string{"Terry Brooks - The High Druid of Shannara 3 - Straken MP3": reasonLaterNumber},
-		},
-		{
 			name:  "High Druid 3 - Straken, wanted position 1",
 			title: "High Druid of Shannara: Jarka Ruus", author: "Terry Brooks",
 			releases:    []string{"Terry Brooks - The High Druid of Shannara 3 - Straken MP3"},

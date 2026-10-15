@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vavallee/bindery/internal/auth"
@@ -36,15 +37,16 @@ type IndexerHandler struct {
 	indexers *db.IndexerRepo
 	// clients validates a download client pin (#3080) on save. Optional: when
 	// nil, any pin is refused rather than stored unchecked.
-	clients   *db.DownloadClientRepo
-	books     *db.BookRepo
-	authors   *db.AuthorRepo
-	aliases   *db.AuthorAliasRepo
-	series    *db.SeriesRepo // optional; the wanted book's series position for the relevance filter (#3268)
-	profiles  *db.MetadataProfileRepo
-	searcher  indexerSearcher
-	settings  *db.SettingsRepo
-	blocklist *db.BlocklistRepo
+	clients            *db.DownloadClientRepo
+	books              *db.BookRepo
+	authors            *db.AuthorRepo
+	aliases            *db.AuthorAliasRepo
+	libraryContextWarn sync.Once
+	series             *db.SeriesRepo // optional; the wanted book's series position for the relevance filter (#3268)
+	profiles           *db.MetadataProfileRepo
+	searcher           indexerSearcher
+	settings           *db.SettingsRepo
+	blocklist          *db.BlocklistRepo
 	// qualityProfiles is optional; when set, the author's allowed-formats list
 	// annotates interactive search results (#1693).
 	qualityProfiles *db.QualityProfileRepo
@@ -697,18 +699,19 @@ func (h *IndexerHandler) SearchBook(w http.ResponseWriter, r *http.Request) {
 	// What the library knows about the wanted book, for the relevance filter
 	// (#3268). Two reads per search; the author's titles are scoped to the
 	// caller like every other book listing.
+	indexer.WarnLibraryContextMissing(&h.libraryContextWarn, "interactive search", h.series == nil, h.books == nil)
+	var seriesRead indexer.SeriesReader
 	if h.series != nil {
-		if _, pos, err := h.series.GetPrimarySeriesForBook(r.Context(), book.ID); err != nil {
-			slog.Warn("failed to load series position for search", "book_id", book.ID, "error", err)
-		} else {
-			crit.SeriesPosition = pos
+		seriesRead = h.series.GetPrimarySeriesForBook
+	}
+	var booksRead indexer.AuthorBooksReader
+	if h.books != nil {
+		uid := auth.UserIDFromContext(r.Context())
+		booksRead = func(ctx context.Context, authorID int64) ([]models.Book, error) {
+			return h.books.ListByAuthorAndUser(ctx, authorID, uid)
 		}
 	}
-	if bs, err := h.books.ListByAuthorAndUser(r.Context(), book.AuthorID, auth.UserIDFromContext(r.Context())); err != nil {
-		slog.Warn("failed to load the author's titles for search", "author_id", book.AuthorID, "error", err)
-	} else {
-		crit.AuthorTitles = indexer.AuthorTitlesExcluding(book.ID, bs)
-	}
+	crit.SetLibraryContext(r.Context(), *book, seriesRead, booksRead)
 	if h.editions != nil {
 		if eds, err := h.editions.ListByBook(r.Context(), book.ID); err != nil {
 			slog.Warn("failed to load editions for search ISBN", "book_id", book.ID, "error", err)

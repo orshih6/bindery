@@ -63,6 +63,9 @@ func TestSearchBook_CarriesSeriesPositionAndAuthorTitles(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	crit := mock.criteria()
+	if crit.SeriesTitle != "Nikolai Duology" {
+		t.Errorf("SeriesTitle = %q, want %q", crit.SeriesTitle, "Nikolai Duology")
+	}
 	if crit.SeriesPosition != "1" {
 		t.Errorf("SeriesPosition = %q, want %q", crit.SeriesPosition, "1")
 	}

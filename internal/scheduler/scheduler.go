@@ -212,23 +212,24 @@ type Scheduler struct {
 	debugLog *indexer.DebugLog
 	meta     *metadata.Aggregator
 
-	authors         *db.AuthorRepo
-	books           *db.BookRepo
-	indexers        *db.IndexerRepo
-	downloads       *db.DownloadRepo
-	clients         *db.DownloadClientRepo
-	history         *db.HistoryRepo
-	settings        *db.SettingsRepo
-	blocklist       *db.BlocklistRepo
-	delayProfiles   *db.DelayProfileRepo
-	pending         *db.PendingReleaseRepo
-	aliases         *db.AuthorAliasRepo     // optional; used for non-latin author matching
-	profiles        *db.MetadataProfileRepo // optional; applies profile language filters to auto-grab
-	qualityProfiles *db.QualityProfileRepo  // optional; enforces the profile's allowed formats on auto-grab (#1693)
-	editions        *db.EditionRepo         // optional; supplies the book ISBN the ranker's exact-match bonus needs (#1724)
-	series          *db.SeriesRepo          // optional; supplies the wanted book's series position to the relevance filter (#3268)
-	calibreSyncer   CalibreSyncer           // optional; nil if Calibre is not configured
-	recommender     RecommendationEngine    // optional; generates recommendations
+	authors            *db.AuthorRepo
+	books              *db.BookRepo
+	indexers           *db.IndexerRepo
+	downloads          *db.DownloadRepo
+	clients            *db.DownloadClientRepo
+	history            *db.HistoryRepo
+	settings           *db.SettingsRepo
+	blocklist          *db.BlocklistRepo
+	delayProfiles      *db.DelayProfileRepo
+	pending            *db.PendingReleaseRepo
+	aliases            *db.AuthorAliasRepo     // optional; used for non-latin author matching
+	profiles           *db.MetadataProfileRepo // optional; applies profile language filters to auto-grab
+	qualityProfiles    *db.QualityProfileRepo  // optional; enforces the profile's allowed formats on auto-grab (#1693)
+	editions           *db.EditionRepo         // optional; supplies the book ISBN the ranker's exact-match bonus needs (#1724)
+	libraryContextWarn sync.Once
+	series             *db.SeriesRepo       // optional; supplies the wanted book's series position to the relevance filter (#3268)
+	calibreSyncer      CalibreSyncer        // optional; nil if Calibre is not configured
+	recommender        RecommendationEngine // optional; generates recommendations
 	// operatorUserID resolves the user the recommendation job writes under.
 	// Optional; nil falls back to the historical hardcoded admin id (#1725).
 	operatorUserID       func(context.Context) int64
@@ -1217,22 +1218,18 @@ func (s *Scheduler) searchAndGrabFormat(ctx context.Context, book models.Book, m
 	}
 	// What the library knows about the wanted book lets the relevance filter
 	// tell a release of this book from the next one in its series (#3268).
-	// Two reads per search, never per release; either failing only leaves
-	// the rules that need it quiet.
+	// Two reads per search, never per release; a missing repo or a failed
+	// read only leaves the rules that need it quiet.
+	indexer.WarnLibraryContextMissing(&s.libraryContextWarn, "scheduler", s.series == nil, s.books == nil)
+	var seriesRead indexer.SeriesReader
 	if s.series != nil {
-		if _, pos, err := s.series.GetPrimarySeriesForBook(ctx, book.ID); err != nil {
-			slog.Warn("failed to load series position for search", "book_id", book.ID, "error", err)
-		} else {
-			crit.SeriesPosition = pos
-		}
+		seriesRead = s.series.GetPrimarySeriesForBook
 	}
+	var booksRead indexer.AuthorBooksReader
 	if s.books != nil {
-		if bs, err := s.books.ListByAuthor(ctx, book.AuthorID); err != nil {
-			slog.Warn("failed to load the author's titles for search", "author_id", book.AuthorID, "error", err)
-		} else {
-			crit.AuthorTitles = indexer.AuthorTitlesExcluding(book.ID, bs)
-		}
+		booksRead = s.books.ListByAuthor
 	}
+	crit.SetLibraryContext(ctx, book, seriesRead, booksRead)
 	if s.editions != nil {
 		if eds, err := s.editions.ListByBook(ctx, book.ID); err != nil {
 			slog.Warn("failed to load editions for search ISBN", "book_id", book.ID, "error", err)

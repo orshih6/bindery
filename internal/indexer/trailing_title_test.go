@@ -1,7 +1,6 @@
 package indexer
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/vavallee/bindery/internal/indexer/newznab"
@@ -31,10 +30,11 @@ func TestTrailingTitleRejectsAnotherBook(t *testing.T) {
 		reason                 string
 	}{
 		{
-			name:  "King of Scars 02 names Rule of Wolves, position unknown",
+			name:  "King of Scars 02 names Rule of Wolves, library title",
 			title: "King of Scars", author: "Leigh Bardugo",
 			release: "Leigh Bardugo - King of Scars 02 - Rule of Wolves.par2",
-			reason:  reasonLaterNumber,
+			bc:      bookContext{otherTitles: []string{"Rule of Wolves"}},
+			reason:  reasonAnotherTitle,
 		},
 		{
 			name:  "King of Scars 02, wanted position 1",
@@ -51,10 +51,11 @@ func TestTrailingTitleRejectsAnotherBook(t *testing.T) {
 			reason:  reasonAnotherTitle,
 		},
 		{
-			name:  "Ships of Merior, scene style bracketed series counter",
+			name:  "Ships of Merior, scene style bracketed series counter, library title",
 			title: "Ships of Merior", author: "Janny Wurts",
 			release: "Janny.Wurts-[Wars.of.Light.and.Shadow.03-Ships.of.Merior.02]-Warhost.of.Vastmark.(retail).(epub",
-			reason:  reasonLaterNumber,
+			bc:      bookContext{otherTitles: []string{"Warhost of Vastmark"}},
+			reason:  reasonAnotherTitle,
 		},
 		{
 			name:  "Ships of Merior, wanted position 3",
@@ -64,23 +65,32 @@ func TestTrailingTitleRejectsAnotherBook(t *testing.T) {
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "Katt vs Dogg 02, HTML escaped ampersand",
+			name:  "Katt vs Dogg 02, HTML escaped ampersand, library title",
 			title: "Katt vs. Dogg", author: "James Patterson",
 			release: "James Patterson &amp; Chris Grabenstein - [Katt vs Dogg 02] - Katt Loves Dogg (retail) (epub)",
-			reason:  reasonLaterNumber,
+			bc:      bookContext{otherTitles: []string{"Katt Loves Dogg"}},
+			reason:  reasonAnotherTitle,
 		},
 		{
-			name:  "Katt vs Dogg 02, known library title",
+			name:  "Katt vs Dogg 02, position and library title",
 			title: "Katt vs. Dogg", author: "James Patterson",
 			release: "James Patterson & Chris Grabenstein - [Katt vs Dogg 02] - Katt Loves Dogg (retail) (epub)",
-			bc:      bookContext{seriesPosition: "1", otherTitles: []string{"Katt Loves Dogg"}},
+			bc:      bookContext{seriesPosition: "1", seriesTitle: "Katt vs. Dogg", otherTitles: []string{"Katt Loves Dogg"}},
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "Percy Jackson series entry, book 4",
+			name:  "Katt vs Dogg 02, the series title does not hide another book of the series",
+			title: "Katt vs. Dogg", author: "James Patterson",
+			release: "James Patterson & Chris Grabenstein - Katt vs Dogg - Katt Loves Dogg (retail) (epub)",
+			bc:      bookContext{seriesTitle: "Katt vs. Dogg", otherTitles: []string{"Katt Loves Dogg"}},
+			reason:  reasonAnotherTitle,
+		},
+		{
+			name:  "Percy Jackson series entry, book 4, library title",
 			title: "Percy Jackson & the Olympians", author: "Rick Riordan",
 			release: "Rick Riordan - [Percy Jackson and the Olympians 04] - The Battle of the Labyrinth (US) (retail) (epub)",
-			reason:  reasonLaterNumber,
+			bc:      bookContext{otherTitles: []string{"The Battle of the Labyrinth"}},
+			reason:  reasonAnotherTitle,
 		},
 		{
 			name:  "Percy Jackson series entry, wanted position 1",
@@ -90,34 +100,45 @@ func TestTrailingTitleRejectsAnotherBook(t *testing.T) {
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "Rotten School 12",
+			name:  "Rotten School 12, library title",
 			title: "Rotten School", author: "R. L. Stine",
 			release: "R L Stine - [Rotten School 12] - Battle of the Dum Diddys (retail) (epub) (epub)",
+			bc:      bookContext{otherTitles: []string{"Battle of the Dum Diddys"}},
+			reason:  reasonAnotherTitle,
+		},
+		{
+			name:  "Rotten School 12, position known",
+			title: "Rotten School", author: "R. L. Stine",
+			release: "R L Stine - [Rotten School 12] - Battle of the Dum Diddys (retail) (epub) (epub)",
+			bc:      bookContext{seriesPosition: "1"},
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "Rotten School 12 with no dash before the number, position known",
+			name:  "Rotten School 12 followed by a bracket, position known",
 			title: "Rotten School", author: "R. L. Stine",
 			release: "R L Stine - Rotten School 12 (retail) (epub)",
 			bc:      bookContext{seriesPosition: "1"},
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "underscore separated release",
+			name:  "underscore separated release, position known",
 			title: "King of Scars", author: "Leigh Bardugo",
 			release: "Leigh_Bardugo_-_King_of_Scars_02_-_Rule_of_Wolves_(retail)_(epub)",
+			bc:      bookContext{seriesPosition: "1"},
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "digit directly before a dash and a word",
+			name:  "digit directly before a dash and a word, position known",
 			title: "King of Scars", author: "Leigh Bardugo",
 			release: "Leigh.Bardugo.King.of.Scars.02-Rule.of.Wolves.EPUB",
+			bc:      bookContext{seriesPosition: "1"},
 			reason:  reasonLaterNumber,
 		},
 		{
-			name:  "Book marker then number",
+			name:  "Book marker then number, position known",
 			title: "King of Scars", author: "Leigh Bardugo",
 			release: "Leigh Bardugo - King of Scars Book 2 - Rule of Wolves (Unabridged) MP3",
+			bc:      bookContext{seriesPosition: "1"},
 			reason:  reasonLaterNumber,
 		},
 	}
@@ -220,13 +241,9 @@ func TestTrailingTitleNegativeCorpusStaysApproved(t *testing.T) {
 
 // TestTrailingTitleNegativesNeedNoContext pins that the corpus does not
 // depend on the library context: with no position and no other titles every
-// release is still approved, except the one entry that is spared only because
-// the wanted position says the release's number is the wanted book's own.
+// release is still approved.
 func TestTrailingTitleNegativesNeedNoContext(t *testing.T) {
 	for _, c := range trailingNegativeCorpus {
-		if strings.HasPrefix(c.spared, "N equals the wanted position and no library") {
-			continue
-		}
 		t.Run(c.release, func(t *testing.T) {
 			kept, reason := relevanceVerdict(c.title, c.author, c.release, bookContext{})
 			if !kept {

@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/vavallee/bindery/internal/indexer/newznab"
 )
 
 // The main title reading (#3268, part 2).
@@ -19,8 +21,10 @@ import (
 //
 //  1. The trailing title rules (series number, another library title) read
 //     what follows the main title, exactly as they do for the full title.
-//  2. When some other result in the same search carries the FULL title and is
-//     approved on it, a main title only release is its sibling and is dropped.
+//  2. When some other result in the same search carries the FULL title, is
+//     approved on it, is the same media type and is the book itself (no
+//     summary or study aid wording, only release furniture after the title),
+//     a main title only release is its sibling and is dropped.
 //     Only when nothing carries the full title is the main title reading used
 //     at all. The exception is a subtitle that only numbers the book ("Dune:
 //     Part One", "Foo: I", "Foo: 1"), because releases drop such a subtitle
@@ -67,8 +71,9 @@ func newSubtitleInfo(title string) subtitleInfo {
 
 // mainTitleOnly judges a release that matched through the main title alone and
 // returns the drop reason, or "" to keep it. identity is the release's identity
-// words joined; anyFull reports whether another result carries the full title.
-func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string, anyFull func() bool, primary ...[]string) string {
+// words joined; anyFull reports whether another result of the given media type carries the
+// full title (see fullTitleCounts).
+func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string, anyFull func(mediaType string) bool, primary ...[]string) string {
 	if !si.has {
 		return ""
 	}
@@ -81,7 +86,7 @@ func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string,
 	if si.seriesLike && si.n <= 1 {
 		return ""
 	}
-	if anyFull() {
+	if mt := releaseMediaType(raw); mt != "" && anyFull(mt) {
 		return reasonMainTitleOnlyFullFound
 	}
 	want := 0
@@ -109,8 +114,10 @@ func (si subtitleInfo) mainTitleOnly(tr *trailingRules, raw, n, identity string,
 		return ""
 	}
 	if want > 0 {
-		if got, ok := numberAfter(raw, n, primary...); ok && got == want {
-			return ""
+		for _, got := range numbersAfter(raw, n, primary...) {
+			if got == want {
+				return ""
+			}
 		}
 	}
 	return reasonMainTitleOnlySequel
@@ -123,10 +130,6 @@ var (
 		"book": true, "part": true, "volume": true, "vol": true, "episode": true,
 		"ep": true, "chapter": true, "tome": true, "band": true, "no": true,
 		"number": true, "issue": true,
-	}
-	numberWords = map[string]int{
-		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-		"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
 	}
 	romanRe = regexp.MustCompile(`^(?:M{0,3})(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$`)
 )
@@ -159,7 +162,9 @@ func seriesLikeSubtitle(sub string) (int, bool) {
 		}
 	}
 	if tok == strings.ToUpper(tok) && romanRe.MatchString(tok) {
-		return romanValue(tok), true
+		if v := romanValue(tok); v >= 1 && v <= 30 {
+			return v, true
+		}
 	}
 	return 0, false
 }
@@ -176,4 +181,55 @@ func romanValue(s string) int {
 		}
 	}
 	return total
+}
+
+// releaseMediaType returns the media type a release names by its format words,
+// or "" when it names none or names both kinds.
+func releaseMediaType(title string) string {
+	mt := ""
+	for _, f := range ReleaseFormats(title) {
+		t := MediaTypeForFormat(f)
+		if t == "" {
+			continue
+		}
+		if mt != "" && mt != t {
+			return ""
+		}
+		mt = t
+	}
+	return mt
+}
+
+// derivativeWordRe finds the words of a summary, study aid or companion, which
+// is about a book and is not the book.
+var derivativeWordRe = regexp.MustCompile(`(?i)\b(?:summary|summaries|analysis|analyses|study\s+guide|workbook|companion|review|reviews|notes|guide|cliffs?\s*notes|spark\s*notes|highlights|synopsis|key\s+takeaways|insights)\b`)
+
+// fullTitleCounts reports whether a result that carries the full title is good
+// evidence that a main title only sibling is not the book (the batch rule).
+// It counts only when the text after the full title is empty or only release
+// furniture (a format, a year, a bitrate, the author, a credit tag: what
+// benignTrailingToken accepts) and no summary or study aid wording appears.
+// Anything else, a title that cannot be located included, does not count, so
+// the main title only release is kept.
+func fullTitleCounts(raw, n string, authorSets [][]string, idents ...[]string) bool {
+	if derivativeWordRe.MatchString(raw) {
+		return false
+	}
+	toks, k, found := locateTitle(raw, n, idents...)
+	if !found {
+		return false
+	}
+	for _, t := range toks[k:] {
+		if len(newznab.SigWords(t.text)) == 0 {
+			continue
+		}
+		benign := benignTrailingToken(t.text, nil)
+		for _, set := range authorSets {
+			benign = benign || benignTrailingToken(t.text, set)
+		}
+		if !benign {
+			return false
+		}
+	}
+	return true
 }

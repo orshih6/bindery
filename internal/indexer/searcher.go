@@ -108,6 +108,11 @@ type MatchCriteria struct {
 	// (#3268). Empty when the book has no series position; the filter then
 	// judges a numbered release on the release name alone.
 	SeriesPosition string
+	// SeriesTitle is the title of the wanted book's primary series. The
+	// relevance filter never reads a library title that equals, contains or is
+	// contained in it as "another title", because releases name their series
+	// (#3268). Empty when the book has no series.
+	SeriesTitle string
 	// AuthorTitles are the titles of the author's OTHER books in the library
 	// (not the wanted book). The relevance filter rejects a release that goes
 	// on to name one of them after the wanted title (#3268). Empty disables
@@ -1004,7 +1009,7 @@ func filterRelevantWithContext(results []newznab.SearchResult, title, author str
 		return FilterDebug{Title: r.Title, IndexerName: r.IndexerName, Stage: "relevance", Reason: reason}
 	}
 
-	rules := newTrailingRules(title, bc, authorTokenSets, fullIdentity, fullIdentityElided, primaryIdentity, primaryIdentityElided, seriesIdentity)
+	rules := newTrailingRules(title, bc, fullIdentity, fullIdentityElided, primaryIdentity, primaryIdentityElided, seriesIdentity)
 	subtitle := newSubtitleInfo(title)
 
 	authorConflict := func(r newznab.SearchResult) bool {
@@ -1034,27 +1039,32 @@ func filterRelevantWithContext(results []newznab.SearchResult, title, author str
 		return keywords, ok, trailing
 	}
 
-	// anyFull reports whether some result in the batch carries the whole
-	// title and is approved on it. The main title reading (see
-	// subtitleInfo.mainTitleOnly) is judged against this: a release that
-	// names only the main title is a sibling of one that names the book, not
-	// the book. Computed on first use, so a batch that never reaches the main
-	// title reading pays nothing.
-	anyFullKnown, anyFull := false, false
-	anyFullInBatch := func() bool {
-		if !anyFullKnown {
-			anyFullKnown = true
+	// fullTitleTypes is the set of media types for which some result in the
+	// batch carries the whole title, is approved on it, is the same book (no
+	// summary or study aid wording, nothing but release furniture after the
+	// title) and has a determinable media type. The main title reading is
+	// judged against it (see subtitleInfo.mainTitleOnly): a release that names
+	// only the main title is a sibling of one that names the book, but only a
+	// sibling of the same media type. Computed on first use, so a batch that
+	// never reaches the main title reading pays nothing.
+	var fullTitleTypes map[string]bool
+	anyFullInBatch := func(mediaType string) bool {
+		if fullTitleTypes == nil {
+			fullTitleTypes = map[string]bool{}
 			for i, r := range results {
 				if authorConflict(r) {
 					continue
 				}
-				if _, ok, _ := evalFull(i); ok {
-					anyFull = true
-					break
+				if _, ok, _ := evalFull(i); !ok {
+					continue
+				}
+				if mt := releaseMediaType(r.Title); mt != "" &&
+					fullTitleCounts(r.Title, normTitles[i], authorTokenSets, fullIdentity, fullIdentityElided) {
+					fullTitleTypes[mt] = true
 				}
 			}
 		}
-		return anyFull
+		return fullTitleTypes[mediaType]
 	}
 
 	filtered := make([]newznab.SearchResult, 0, len(results))

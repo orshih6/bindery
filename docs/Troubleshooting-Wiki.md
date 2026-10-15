@@ -19,33 +19,52 @@ title and then goes on to name another book is dropped, with a reason in the
 search debug view (`GET /search/last-debug`, and the interactive search panel).
 Two things drop it:
 
-- **A later series number.** `King of Scars 02 - Rule of Wolves` is not
-  `King of Scars`. A number of 2 or more straight after the title (also
-  `[Rotten School 12]`, `Series Book 3`) drops the release with the reason
-  `release names a different series number after this title` when Bindery
-  knows the book's series position and the number differs. When the book has
-  no position, the number only drops the release if a dash follows it and
-  ordinary title words come after the dash (`Title 02 - Rule of Wolves`); a
-  bare `Title 02`, `Title 02 (Unabridged)` or `Title 02 - Unabridged` is kept.
+- **A later series number, when the book has a stored series position.**
+  `King of Scars 02 - Rule of Wolves` is not `King of Scars` (position 1). A
+  number of 2 or more straight after the title (also `[Rotten School 12]`,
+  `Series Book 3`, `Series #3`) that differs from the stored position drops the
+  release with the reason `release names a different series number after this
+  title`. It only counts when the number ends the name, is followed by
+  punctuation (a dash, colon, comma, semicolon, bracket, or a period and a
+  space), or sits behind a marker word (book, vol, volume, no, number, episode,
+  tome, band, part) or a `#`. A number followed by an ordinary word is a count
+  and never drops a release: `Title 12 files`, `Title 4 mp3`, `Title 24 bit`,
+  `Title 3 Tapes`, `Title 2 vols`, `Title 2 CD`, `64 kbps`, `12 hours`.
 - **Another of the author's titles.** If one of the author's other books in your
   library appears in the words after the title, the release is dropped with
   `release names another title after this one`. A title before yours
   (`Belgariad 2 - Queen of Sorcery`) is a series prefix and is fine. Only
   library titles of two or more significant words count, and the rule is off
-  when the wanted book is itself a set (a set release lists its books).
+  when the wanted book is itself a set (a set release lists its books). A
+  library title is also not read as "another title" when it equals, contains or
+  is contained in the book's own series title (releases write `Title (Series
+  #N)` and `Title - Series N`), when it contains the wanted title (`Dune
+  Messiah` for `Dune`), or when the wanted title contains it.
 
 Numbers that are not series numbers never drop a release: `01` (the first book),
 `Part 1 of 2` and `Book 2 of the Stormlight Archive` (a number followed by
-"of"), a four digit year, `64 kbps`, `2 CD`, `12 hours`, and a number equal to
-the book's own position.
+"of"), a four digit year, and a number equal to the book's own position (or
+inside a stored range such as `1-3`).
 
-What this does not catch: a later book that carries no number and is not in your
-library (`Title - Some Other Book`), a number joined to the title without a
-separator the filter can read (`Title2`), a number written as a word (`Title
-Two`), and a release that names only a shorter or longer title (`Dune Messiah`
-for `Dune`, which the title checks above already handle). A book with no stored
-series position is judged on the release name alone, so adding the series
-position on the book's page makes the number check stricter.
+**The limit that matters most:** with no stored series position, a number after
+the title is not judged at all, because nothing in the release name can tell
+`Title 02 - Rule of Wolves` from `Title 02 - Scott Brick` or `Title 02 -
+Dramatized`. Such a release is caught only through a library title after the
+number. So `Rotten School 12` and `Percy Jackson and the Olympians 04` are
+caught only when the book has a series position (it comes from the series data,
+see the Hardcover series page) or the later book is in your library. Set the
+series position on the book to turn the number check on.
+
+What else this does not catch: a later book that carries no number and is not in
+your library (`Title - Some Other Book`), a library title that is the wanted
+entry's own subtitle or member when the entry is a series (`Mistborn - The Final
+Empire` for a bare `Mistborn` entry with `The Final Empire` in the library, `The
+Lord of the Rings - The Fellowship of the Ring`), a number joined to the title
+without a separator the filter can read (`Title2`) or written as a word (`Title
+Two`), and a release that extends the wanted title into another book's title
+(`Frank Herbert - Dune Messiah` is still approved for `Dune`; the title checks
+above only stop it when the title is one significant word followed by a
+connective and more words).
 
 ### A release has the main title but not the subtitle
 
@@ -56,9 +75,16 @@ and three more:
 
 - If another result in the same search carries the whole title, a main title
   only release is dropped with `release carries only the main title, and
-  another result carries the full title`. The main title reading is used only
-  when nothing in the search carries the full title. A release that names the
-  subtitle too (`Prelude to Foundation`) is not a main title only release.
+  another result carries the full title`. The other result counts only when it
+  is the same media type (audio against audio, ebook against ebook, judged by
+  the format words; a release with no format word, or with both kinds, never
+  triggers the rule), is the book itself (nothing but release furniture after
+  the title, and no summary, analysis, study guide, workbook, companion, review,
+  notes, guide or highlights wording), and is approved on the full title. So a
+  summary epub or a study guide pdf never hides an audiobook. Ranking is left
+  alone: a main title only release that survives is ranked like any other.
+  A release that names the subtitle too (`Prelude to Foundation`) is not a main
+  title only release.
 - A subtitle that only numbers the book as the first (`Dune: Part One`, `Foo:
   I`, `Foo: 1`) is exempt, because releases drop such a subtitle as a matter of
   course.
@@ -67,8 +93,12 @@ and three more:
   author's books` when the book's series position is 2 or more, when its
   subtitle numbers it 2 or more (`Dune: Part Two`), or when the main title is
   itself the title of another of the author's books in your library (`Legion`
-  for `Legion: Skin Deep`). It is kept if the release carries the wanted number
-  right after the main title (`Legion 2`).
+  for `Legion: Skin Deep`), unless that library title equals, contains or is
+  contained in the book's own series title. It is kept if the release carries
+  the wanted number right after the main title, written as `2`, `02`, `Book 2`,
+  `#2`, `Vol. 2`, a capital roman numeral (`II`), a number word after a marker
+  (`Book Two`), or a season or series form (`S1 Part 2`, `Series 02`, `Season
+  2`).
 - The series number and other title checks above also read what follows the
   main title, so `The High Druid of Shannara 3 - Straken` is not `High Druid of
   Shannara: Jarka Ruus`.
@@ -91,17 +121,28 @@ free text Search page. A title is a fragment when it has either:
 - a chapter marker, `Ch`, `Ch.` or `Chapter`, straight before a number (`Ch63`,
   `Ch. 5`, `Chapter 12`); or
 - `NN of MM` with MM of 10 or more (`12 of 40`, `Part 3 of 12`), unless the word
-  before NN numbers a book in a series (`Book 3 of 12`, `Vol 2 of 10`),
+  before NN numbers a book in a series: book, bk, vol, volume, series, no,
+  number, novel, tome, band, season, episode, issue, disc, cd, or a `#`
+  (`Book 3 of 12`, `Vol 2 of 10`, `Tome 03 of 41`),
 
 and it names an audio format (mp3, m4a, m4b, flac, ogg, aac, wav, wma, opus) or
-no format at all. A title that names an ebook format is never dropped by this
-rule. `Part 1 of 2` and other counters with MM under 10 are kept, since a long
-audiobook is often posted as a few parts.
+no format at all. A title that names an ebook format (epub, epub3, kepub, mobi,
+azw, azw3, kfx, pdf, doc, docx, html, htm, ebook, lit, prc, djvu, cbr, cbz, fb2,
+rtf, txt) is never dropped by this rule. An underscore counts as a space, so
+`Author_Title_Ch63_of_71_mp3` is dropped like the dotted form. The rule is exact
+about counters: a whole book `Part 1 of 2` and any `NN of MM` with MM under 10
+are kept, since a long audiobook is often posted as a few parts; a chapter
+marker or `NN of MM` with MM of 10 or more is dropped unless an ebook format or a
+series count word spares it.
+
+The file size is not used. A fragment is recognised by its name only, so an
+ebook with a chapter counter and no format word in its name is dropped too.
 
 What this does not catch: a fragment posted as `Part 3 of 8`, a fragment with
 only a bare number and no counter word, and a fragment named in another
 language. It can wrongly drop a whole release whose own title contains `NN of
-MM` with MM of 10 or more and no ebook format, such as `12 of 56 Stories`.
+MM` with MM of 10 or more, no ebook format and no series count word in front
+(`12 of 56 Stories`, `Discworld 03 of 41`).
 
 These checks use the release name. They do not open the download. A separate
 check does, once the download has finished: Bindery compares an EPUB's own title

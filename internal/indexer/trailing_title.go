@@ -1,9 +1,12 @@
 package indexer
 
 import (
+	"context"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -25,24 +28,30 @@ import (
 // signal below needs the release to say something specific, and anything
 // unclear is kept.
 //
-// Signal A, a series number after the title. The release has a number N of 2
-// or more directly after the title ("King of Scars 02", "[Rotten School 12]",
-// "Series Book 3"), optionally behind a marker word (book, vol, volume, no,
-// number, episode, tome, band), and then:
+// Signal A, a series number after the title. It applies ONLY when the wanted
+// book's series position is known (it comes from the series data). The release
+// has a number N of 2 to 99 directly after the title ("King of Scars 02",
+// "[Rotten School 12]", "Series Book 3"), optionally behind marker words (book,
+// bk, vol, volume, no, number, episode, tome, band, part, or a "#"), and N is
+// outside the position (a stored range such as "1-3" counts as all its
+// numbers). It rejects only when the number stands as a number and not as a
+// count of something:
 //
-//   - when the wanted book's series position is known, N must equal it (or sit
-//     inside a stored range such as "1-3"); a different N rejects, with or
-//     without words after it;
-//   - when the position is not known, N rejects only if a dash follows it and
-//     the first significant word after the dash is not release furniture (a
-//     format, a year, a bitrate, a language tag, a credit such as "narrated
-//     by", the author's own name). "Title 02 - Rule of Wolves" rejects;
-//     "Title 02 (Unabridged)", "Title 02" and "Title 02 retail epub" do not.
+//   - the number ends the release name;
+//   - or it is followed by punctuation (a dash, colon, comma, semicolon or a
+//     bracket, or a period followed by a space);
+//   - or it sits behind a marker word or a "#".
 //
-// N of 1 never rejects: "Title 01" is the first book, the usual reading of the
-// wanted title. "N of M" counters ("Part 2 of 2", "Book 2 of the Stormlight
-// Archive"), four digit years, decimals, bitrates ("64 kbps", "128 MP3"), disc
-// counts ("2 CD") and running times ("12 hours") are not series numbers.
+// A number followed by an ordinary word ("Title 12 files", "Title 4 mp3",
+// "Title 24 bit", "Title 3 Tapes", "Title 2 vols") is a count and never
+// rejects, whatever the word is. Neither does N of 1 ("Title 01" is the usual
+// first book), "N of M" ("Part 2 of 2", "Book 2 of the Stormlight Archive"),
+// a four digit year, or a number equal to the position.
+//
+// With no stored position the number is not judged on its own: no heuristic
+// can tell "Title 02 - Rule of Wolves" from "Title 02 - Scott Brick" or
+// "Title 02 - Dramatized". Such a release is caught only by signal B, through
+// a library title after the number.
 //
 // Signal B, another of the author's titles after the title. When the caller
 // supplies the titles of the author's other books in the library, a release
@@ -50,10 +59,14 @@ import (
 // is that other book. A known title BEFORE the wanted one is a series prefix
 // ("Belgariad 2 - Queen of Sorcery") and is not read. Only titles of two or
 // more significant words count, so a one word title ("Legion", "Wolves")
-// cannot match the ordinary words of every release. Titles that contain the
-// wanted title ("Dune Messiah" for "Dune") and titles that are themselves box
-// sets are skipped, and the whole signal is off when the wanted title is
-// itself a set (a set release lists its members).
+// cannot match the ordinary words of every release. Not read as "another
+// title": a title that contains the wanted title ("Dune Messiah" for "Dune"),
+// a title contained in the wanted title, a title that equals, contains or is
+// contained in the wanted book's primary series title (releases name their
+// series, "Title (Series #N)" and "Title - Series N", and the library often
+// holds a series named entry), and a title that is itself a box set. The whole
+// signal is off when the wanted title is itself a set (a set release lists its
+// members).
 //
 // Both signals need to know where the wanted title ends in the release. They
 // find it with the same phrase match the identity gate uses; a release that
@@ -73,32 +86,79 @@ type bookContext struct {
 	// seriesPosition is the book's position in its primary series, as stored
 	// ("3", "03", "1-3", "2.5", ""). Empty when it has none.
 	seriesPosition string
+	// seriesTitle is the title of the book's primary series, "" when it has
+	// none.
+	seriesTitle string
 	// otherTitles are the titles of the author's other books in the library.
 	otherTitles []string
 }
 
 // context is the book context carried by the search criteria.
 func (c MatchCriteria) context() bookContext {
-	return bookContext{seriesPosition: c.SeriesPosition, otherTitles: c.AuthorTitles}
+	return bookContext{seriesPosition: c.SeriesPosition, seriesTitle: c.SeriesTitle, otherTitles: c.AuthorTitles}
 }
 
-// relTok is one NormalizeRelease token of a release name together with the raw
-// text that separated it from the token before it.
+// SeriesReader reads a book's primary series: its title and the book's
+// position in it. db.SeriesRepo.GetPrimarySeriesForBook is one.
+type SeriesReader func(ctx context.Context, bookID int64) (seriesTitle, position string, err error)
+
+// AuthorBooksReader lists an author's books. db.BookRepo.ListByAuthor is one.
+type AuthorBooksReader func(ctx context.Context, authorID int64) ([]models.Book, error)
+
+// SetLibraryContext fills the criteria's SeriesTitle, SeriesPosition and
+// AuthorTitles from the library, for the relevance filter. Either reader may be
+// nil (the repo was never attached) and then that part stays empty and the
+// rules that need it stay quiet; a failing read does the same and is logged.
+// It costs two reads per search, never one per release.
+func (c *MatchCriteria) SetLibraryContext(ctx context.Context, book models.Book, series SeriesReader, books AuthorBooksReader) {
+	if series != nil {
+		if title, pos, err := series(ctx, book.ID); err != nil {
+			slog.Warn("failed to load series for search", "book_id", book.ID, "error", err)
+		} else {
+			c.SeriesTitle, c.SeriesPosition = title, pos
+		}
+	}
+	if books != nil {
+		if bs, err := books(ctx, book.AuthorID); err != nil {
+			slog.Warn("failed to load the author's titles for search", "author_id", book.AuthorID, "error", err)
+		} else {
+			c.AuthorTitles = AuthorTitlesExcluding(book.ID, bs)
+		}
+	}
+}
+
+// WarnLibraryContextMissing logs, once per owner, that the relevance filter's
+// library context is only partly available because a repo was never attached.
+// The filter then runs without the series rules, which is safe but weaker.
+func WarnLibraryContextMissing(once *sync.Once, owner string, seriesMissing, booksMissing bool) {
+	if !seriesMissing && !booksMissing {
+		return
+	}
+	once.Do(func() {
+		slog.Warn("search relevance filter is missing library context; series number and other title checks are weaker (#3268)",
+			"owner", owner, "series_repo_missing", seriesMissing, "books_repo_missing", booksMissing)
+	})
+}
+
+// relTok is one NormalizeRelease token of a release name, the raw word it came
+// from (original case, for the roman numeral check) and the raw text that
+// separated it from the token before it.
 type relTok struct {
 	text string
+	raw  string
 	sep  string
 }
 
 func isTokenRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '\'' || r == '’'
+	return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '\'' || r == rune(0x2019)
 }
 
 // tokenizeRelease splits raw into the tokens NormalizeRelease(raw) would
-// produce, keeping the raw separator in front of each so a dash can be told
-// from a space. NormalizeRelease collapses every separator, which is right for
-// matching and wrong for reading "02 - Rule of Wolves". ok is false when the
-// two tokenisations disagree, in which case the caller must not read anything
-// from the result.
+// produce, keeping the raw separator in front of each so punctuation can be
+// told from a space. NormalizeRelease collapses every separator, which is right
+// for matching and wrong for reading "02 - Rule of Wolves". ok is false when
+// the two tokenisations disagree, in which case the caller must not read
+// anything from the result.
 func tokenizeRelease(raw string) ([]relTok, bool) {
 	runes := []rune(norm.NFC.String(raw))
 	var toks []relTok
@@ -113,11 +173,12 @@ func tokenizeRelease(raw string) ([]relTok, bool) {
 			j++
 		}
 		sep := string(runes[last:i])
-		for k, w := range strings.Fields(NormalizeRelease(string(runes[i:j]))) {
+		chunk := string(runes[i:j])
+		for k, w := range strings.Fields(NormalizeRelease(chunk)) {
 			if k > 0 {
 				sep = " "
 			}
-			toks = append(toks, relTok{text: w, sep: sep})
+			toks = append(toks, relTok{text: w, raw: chunk, sep: sep})
 		}
 		last, i = j, j
 	}
@@ -133,49 +194,27 @@ func tokenizeRelease(raw string) ([]relTok, bool) {
 	return toks, true
 }
 
-// dashRunes are the hyphen, en dash and em dash code points, built from rune
-// values so the source carries none of them literally.
-var dashRunes = string([]rune{'-', 0x2013, 0x2014})
+// punctRunes are the characters that make a separator punctuation: hyphen, en
+// dash, em dash, colon, comma, semicolon and brackets. Built from code points
+// so the source carries no dash literally.
+var punctRunes = string([]rune{'-', 0x2013, 0x2014, ':', ',', ';', '(', ')', '[', ']', '{', '}'})
 
-// dashBefore reports whether the separator in front of tok is a dash used as
-// punctuation: " - ", "]-", "._-_", or "02-Title" (a number running into a
-// word). A bare hyphen between two letters is a compound word and is not.
-func dashBefore(prev, tok relTok) bool {
-	if !strings.ContainsAny(tok.sep, dashRunes) {
-		return false
-	}
-	if strings.Trim(tok.sep, dashRunes) != "" {
-		return true
-	}
-	if prev.text == "" || tok.text == "" {
-		return false
-	}
-	last := rune(prev.text[len(prev.text)-1])
-	first := []rune(tok.text)[0]
-	return unicode.IsDigit(last) && unicode.IsLetter(first)
+// periodSpaceRe matches a period followed by white space in a separator: real
+// sentence punctuation, unlike the bare dots that release names use as spaces.
+var periodSpaceRe = regexp.MustCompile(`\.\s`)
+
+// punctBefore reports whether the separator in front of tok contains
+// punctuation. Spaces, underscores and bare dots are not punctuation.
+func punctBefore(tok relTok) bool {
+	return strings.ContainsAny(tok.sep, punctRunes) || periodSpaceRe.MatchString(tok.sep)
 }
 
 // seriesNumberMarkers are the words that may sit between a title and its
-// series number: "Title Book 2", "Title Vol. 2". "part" is left out on
-// purpose: "Title Part 2" is the second half of one recording as often as it is
-// a sequel.
+// series number: "Title Book 2", "Title Vol. 2", "Title Part 2".
 var seriesNumberMarkers = map[string]bool{
 	"book": true, "bk": true, "vol": true, "volume": true, "no": true,
-	"number": true, "episode": true, "tome": true, "band": true,
+	"number": true, "episode": true, "tome": true, "band": true, "part": true,
 }
-
-// numberUnits are the words after a number that make it a count of something
-// other than a series position.
-var numberUnits = map[string]bool{
-	"kbps": true, "kbit": true, "khz": true, "cd": true, "cds": true,
-	"disc": true, "discs": true, "dvd": true, "hour": true, "hours": true,
-	"hr": true, "hrs": true, "min": true, "mins": true, "minutes": true,
-	"mb": true, "gb": true, "k": true,
-}
-
-// bitrateNumbers are the two digit bitrates that may be written bare in front
-// of a format ("64 MP3").
-var bitrateNumbers = map[int]bool{32: true, 40: true, 48: true, 56: true, 64: true, 80: true, 96: true}
 
 // setTitleRe finds a title that names a whole set rather than one book.
 var setTitleRe = regexp.MustCompile(`(?i)\b(?:trilogy|tetralogy|quartet|quintet|saga|collection|omnibus|anthology|complete|boxed?\s*set|boxset|books?\s+\d+)\b`)
@@ -195,7 +234,6 @@ type trailingRules struct {
 	posLo, posHi int
 	posKnown     bool
 	others       []otherTitle
-	authorSets   [][]string
 	// otherFull holds the identity words, joined, of every other library
 	// title of any length. Part 2 asks whether the wanted book's main title
 	// is itself another of the author's books.
@@ -205,11 +243,28 @@ type trailingRules struct {
 // newTrailingRules prepares the rules for one wanted title. wanted are the
 // identity word lists of every reading of the wanted title, used to keep a
 // library title that contains the wanted one out of signal B.
-func newTrailingRules(title string, bc bookContext, authorSets [][]string, wanted ...[]string) *trailingRules {
-	tr := &trailingRules{authorSets: authorSets, otherFull: map[string]bool{}}
+func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailingRules {
+	tr := &trailingRules{otherFull: map[string]bool{}}
 	tr.posLo, tr.posHi, tr.posKnown = parsePosition(bc.seriesPosition)
+
+	cleanedSeries := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(bc.seriesTitle))
+	seriesIdent := titleIdentityKeywords(cleanedSeries)
+	seriesNorm := NormalizeRelease(cleanedSeries)
+	// relatedToSeries reports whether v equals, contains or is contained in the
+	// wanted book's primary series title.
+	relatedToSeries := func(v string) bool {
+		if len(seriesIdent) == 0 {
+			return false
+		}
+		vi := titleIdentityKeywords(v)
+		return ContainsPhrase(NormalizeRelease(v), seriesIdent) || (len(vi) > 0 && ContainsPhrase(seriesNorm, vi))
+	}
+
 	for _, raw := range bc.otherTitles {
 		cleaned := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(raw))
+		if relatedToSeries(cleaned) {
+			continue
+		}
 		if ident := titleIdentityKeywords(cleaned); len(ident) > 0 {
 			tr.otherFull[strings.Join(ident, " ")] = true
 		}
@@ -217,6 +272,7 @@ func newTrailingRules(title string, bc bookContext, authorSets [][]string, wante
 	if isSetTitle(title) {
 		return tr
 	}
+	wantedNorm := NormalizeRelease(title)
 	seen := map[string]bool{}
 	for _, raw := range bc.otherTitles {
 		cleaned := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(raw))
@@ -233,6 +289,9 @@ func newTrailingRules(title string, bc bookContext, authorSets [][]string, wante
 				continue
 			}
 			seen[key] = true
+			if relatedToSeries(v) || ContainsPhrase(wantedNorm, ident) {
+				continue
+			}
 			normTitle := NormalizeRelease(v)
 			contained := false
 			for _, w := range wanted {
@@ -272,7 +331,7 @@ var (
 
 // parsePosition reads a stored series position. Only a whole number or a
 // whole number range is understood; "2.5", "Prequel" and "" are unknown, and
-// the rules then judge the release name alone.
+// signal A then stays quiet.
 func parsePosition(s string) (lo, hi int, ok bool) {
 	s = strings.TrimSpace(s)
 	if m := positionIntRe.FindStringSubmatch(s); m != nil {
@@ -304,12 +363,12 @@ func (tr *trailingRules) check(raw, n string, idents ...[]string) string {
 	return tr.otherTitleIn(toks[k:])
 }
 
-// locateTitleEnd finds where the wanted title ends in the release: the tokens
-// of raw and the index of the first token after the title. ok is false when
-// the title has no contiguous phrase hit (a release that matched only through
-// the unordered keyword fallback), when nothing follows it, or when the raw
-// tokenisation cannot be trusted.
-func locateTitleEnd(raw, n string, idents ...[]string) (toks []relTok, k int, ok bool) {
+// locateTitle finds where the wanted title ends in the release: the tokens of
+// raw and the index of the first token after the title, which equals
+// len(toks) when the title ends the release. found is false when the title has
+// no contiguous phrase hit (a release that matched only through the unordered
+// keyword fallback) or when the raw tokenisation cannot be trusted.
+func locateTitle(raw, n string, idents ...[]string) (toks []relTok, k int, found bool) {
 	end := -1
 	for _, ident := range idents {
 		if len(ident) == 0 {
@@ -323,103 +382,116 @@ func locateTitleEnd(raw, n string, idents ...[]string) (toks []relTok, k int, ok
 	if end < 0 {
 		return nil, 0, false
 	}
-	toks, ok = tokenizeRelease(raw)
+	toks, ok := tokenizeRelease(raw)
 	if !ok {
 		return nil, 0, false
 	}
-	k = len(strings.Fields(n[:end]))
-	if k >= len(toks) {
+	return toks, len(strings.Fields(n[:end])), true
+}
+
+// locateTitleEnd is locateTitle for the rules that read what follows: ok is
+// false when nothing follows the title.
+func locateTitleEnd(raw, n string, idents ...[]string) (toks []relTok, k int, ok bool) {
+	toks, k, found := locateTitle(raw, n, idents...)
+	if !found || k >= len(toks) {
 		return nil, 0, false
 	}
 	return toks, k, true
 }
 
-// numberAfter reads the series number directly after the wanted title, with
-// the same marker words signal A allows ("Title 2", "Title Book 2").
-func numberAfter(raw, n string, idents ...[]string) (int, bool) {
-	toks, k, ok := locateTitleEnd(raw, n, idents...)
-	if !ok {
-		return 0, false
+// readMarkers are the words that may stand between a title and a series number
+// when the number is only READ for equality ("Mistborn Book Two", "Mistborn
+// Series 02", "Mistborn Season 2"). A wider set than signal A's, because
+// equality only ever keeps a release.
+var readMarkers = map[string]bool{
+	"book": true, "bk": true, "vol": true, "volume": true, "no": true,
+	"number": true, "episode": true, "tome": true, "band": true, "part": true,
+	"series": true, "season": true,
+}
+
+var (
+	seasonTokenRe = regexp.MustCompile(`^s(\d{1,2})$`)
+	numberWords   = map[string]int{
+		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+		"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+		"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
+		"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
 	}
-	if seriesNumberMarkers[toks[k].text] {
-		k++
+)
+
+// numbersAfter reads the series numbers named directly after the wanted title:
+// digits ("2", "02"), a roman numeral in capitals ("II"), a number word after
+// a marker ("Book Two"), and a season token ("S1"), behind any run of marker
+// words ("Series 02", "S1 Part 2"). The scan stops at the first token that is
+// none of these or after a plain number. It is used to keep a release, never
+// to reject one.
+func numbersAfter(raw, n string, idents ...[]string) []int {
+	toks, k, found := locateTitle(raw, n, idents...)
+	if !found {
+		return nil
 	}
-	if k >= len(toks) || len(toks[k].text) > 2 || !isAllDigits(toks[k].text) {
-		return 0, false
+	var out []int
+	afterMarker := false
+	for i := k; i < len(toks); i++ {
+		t := toks[i]
+		switch {
+		case readMarkers[t.text]:
+			afterMarker = true
+		case seasonTokenRe.MatchString(t.text):
+			v, _ := strconv.Atoi(seasonTokenRe.FindStringSubmatch(t.text)[1])
+			out = append(out, v)
+			afterMarker = true
+		case len(t.text) <= 2 && isAllDigits(t.text):
+			v, _ := strconv.Atoi(t.text)
+			return append(out, v)
+		case t.raw == strings.ToUpper(t.raw) && romanRe.MatchString(t.raw) && romanValue(t.raw) >= 1 && romanValue(t.raw) <= 30:
+			return append(out, romanValue(t.raw))
+		case afterMarker && numberWords[t.text] > 0:
+			return append(out, numberWords[t.text])
+		default:
+			return out
+		}
 	}
-	v, _ := strconv.Atoi(toks[k].text)
-	return v, true
+	return out
 }
 
 // seriesNumberAfter is signal A. toks[k:] is what follows the wanted title.
 func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
+	if !tr.posKnown {
+		return ""
+	}
 	i := k
-	if seriesNumberMarkers[toks[i].text] {
+	viaMarker := false
+	for i < len(toks) && seriesNumberMarkers[toks[i].text] {
 		i++
+		viaMarker = true
 	}
 	if i >= len(toks) {
 		return ""
 	}
-	num := toks[i].text
-	if len(num) > 2 || !isAllDigits(num) {
+	num := toks[i]
+	if len(num.text) > 2 || !isAllDigits(num.text) {
 		return ""
 	}
-	n, _ := strconv.Atoi(num)
-	if n < 2 {
+	n, _ := strconv.Atoi(num.text)
+	if n < 2 || (n >= tr.posLo && n <= tr.posHi) {
 		return ""
+	}
+	if strings.Contains(num.sep, "#") {
+		viaMarker = true
 	}
 	if i+1 < len(toks) {
-		next := toks[i+1].text
-		switch {
-		case next == "of", isAllDigits(next), numberUnits[next]:
-			return ""
-		case bitrateNumbers[n] && isFormatToken(next):
+		next := toks[i+1]
+		if next.text == "of" || isAllDigits(next.text) {
 			return ""
 		}
-	}
-	if tr.posKnown {
-		if n >= tr.posLo && n <= tr.posHi {
+		// A number followed by an ordinary word is a count ("12 files",
+		// "4 mp3"), unless a marker word says it numbers the book.
+		if !viaMarker && !punctBefore(next) {
 			return ""
 		}
-		return reasonLaterNumber
 	}
-	if i+1 >= len(toks) || !dashBefore(toks[i], toks[i+1]) {
-		return ""
-	}
-	if tr.startsAnotherTitle(toks[i+1:]) {
-		return reasonLaterNumber
-	}
-	return ""
-}
-
-func isFormatToken(tok string) bool {
-	for _, f := range formatTokens {
-		if tok == f {
-			return true
-		}
-	}
-	return false
-}
-
-// startsAnotherTitle reports whether the first significant word of toks is
-// ordinary title text rather than release furniture. Only the FIRST word is
-// read: a release group or a narrator further along must not count.
-func (tr *trailingRules) startsAnotherTitle(toks []relTok) bool {
-	for _, t := range toks {
-		if len(newznab.SigWords(t.text)) == 0 {
-			continue
-		}
-		if creditRoleWords[t.text] {
-			return false
-		}
-		for _, set := range tr.authorSets {
-			if benignTrailingToken(t.text, set) {
-				return false
-			}
-		}
-		return !benignTrailingToken(t.text, nil)
-	}
-	return false
+	return reasonLaterNumber
 }
 
 // otherTitleIn is signal B. rest is what follows the wanted title.
