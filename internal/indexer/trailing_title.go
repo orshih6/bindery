@@ -444,6 +444,25 @@ func readableRoman(raw string) (int, bool) {
 	return v, v >= 1 && v <= 30
 }
 
+// loneRomanReadable reports whether the capital I, V or X at toks[i] names the
+// wanted number when read for equality (never when read to reject, where
+// readableRoman keeps them out so "V. E. Schwab" is never a number). It does so
+// behind a marker word or a hash, at the end of the name, or before a format or
+// other release furniture. An author initial is followed by another initial or
+// a name, so a following single letter or ordinary word rules it out.
+func loneRomanReadable(toks []relTok, i int, afterMarker bool) bool {
+	switch toks[i].raw {
+	case "I", "V", "X":
+	default:
+		return false
+	}
+	if afterMarker || strings.Contains(toks[i].sep, "#") || i+1 >= len(toks) {
+		return true
+	}
+	next := toks[i+1].text
+	return len(next) > 1 && benignTrailingToken(next, nil)
+}
+
 // standsAsNumber reports whether the number token at toks[i] is a number and
 // not a count of something: it ends the name, is followed by punctuation, or
 // sits behind a marker word or a hash. "of" and another number after it never
@@ -496,6 +515,8 @@ func numbersAfter(raw, n string, guarded bool, idents ...[]string) []int {
 		case isRoman:
 			// A capital roman numeral is never a count, so it is not guarded.
 			return append(out, roman)
+		case !guarded && loneRomanReadable(toks, i, afterMarker):
+			return append(out, romanValue(t.raw))
 		case afterMarker && numberWords[t.text] > 0:
 			return append(out, numberWords[t.text])
 		default:

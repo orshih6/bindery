@@ -32,7 +32,9 @@ Two things drop it:
   `Title 3 Tapes`, `Title 2 vols`, `Title 2 CD`, `64 kbps`, `12 hours`. A
   capital roman numeral from `II` to `XXX` counts as a number in the same
   places (`Mistborn III` at position 2 is dropped). A lone `I`, `V` or `X` is
-  never read (they are the pronoun and author initials, as in `V. E. Schwab`),
+  never read as a number that drops a release (they are the pronoun and author
+  initials, as in `V. E. Schwab`); they only count as the wanted number that
+  keeps one, behind a marker word or at the end of the name (`Alpha Book V`),
   lowercase is never read, and nothing is read after a wanted title that itself
   ends in a roman numeral (`Henry V`, `Rocky II`).
 - **Another of the author's titles.** If one of the author's other books in your
