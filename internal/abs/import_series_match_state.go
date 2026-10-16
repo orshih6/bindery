@@ -62,14 +62,14 @@ func seriesMatchMissExpiry(checkedAt time.Time, inputHash string) time.Time {
 	var offset time.Duration
 	if raw, err := hex.DecodeString(inputHash); err == nil && len(raw) >= 2 {
 		n := int64(binary.BigEndian.Uint16(raw[:2]))
-		offset = time.Duration(int64(seriesMatchMissJitter) * n / 0x10000)
+		offset = time.Duration(n) * (seriesMatchMissJitter / 0x10000)
 	}
 	return checkedAt.Add(seriesMatchMissTTL + offset)
 }
 
 // seriesMatchAlreadyDone reports whether this item's Hardcover series match can
 // be skipped. Reading is safe in dry runs, which never write outcomes.
-func (i *Importer) seriesMatchAlreadyDone(ctx context.Context, cfg ImportConfig, itemID, inputHash string) bool {
+func (i *Importer) seriesMatchAlreadyDone(ctx context.Context, cfg ImportConfig, book *models.Book, itemID, inputHash string) bool {
 	if i.seriesMatchState == nil || cfg.Full {
 		return false
 	}
@@ -79,7 +79,7 @@ func (i *Importer) seriesMatchAlreadyDone(ctx context.Context, cfg ImportConfig,
 		return false
 	}
 	if state == nil {
-		return i.seriesMatchBootstrap(ctx, cfg, itemID, inputHash)
+		return i.seriesMatchBootstrap(ctx, cfg, book, itemID, inputHash)
 	}
 	if state.InputHash != inputHash {
 		return false
@@ -93,12 +93,16 @@ func (i *Importer) seriesMatchAlreadyDone(ctx context.Context, cfg ImportConfig,
 	return false
 }
 
-// seriesMatchBootstrap adopts a match made before outcomes were recorded: an
-// item already carrying a series membership whose series has a Hardcover link
-// is treated as matched, so upgrading does not cost one more full walk. The
-// current hash is recorded, which means only changes from here on re-match.
-func (i *Importer) seriesMatchBootstrap(ctx context.Context, cfg ImportConfig, itemID, inputHash string) bool {
-	if i.provenance == nil || i.series == nil {
+// seriesMatchBootstrap adopts a match made before outcomes were recorded, so
+// upgrading does not cost one more full walk. It trusts only evidence about
+// this item, and needs both: the item's own book already carries a Hardcover
+// identity (a match merges that onto the book), and the item has a series
+// membership whose series has a Hardcover link. A brand new volume joining a
+// series a sibling already linked has the membership but not the identity, so
+// it is not adopted and matches normally. The current hash is recorded, which
+// means only changes from here on re-match.
+func (i *Importer) seriesMatchBootstrap(ctx context.Context, cfg ImportConfig, book *models.Book, itemID, inputHash string) bool {
+	if i.provenance == nil || i.series == nil || book == nil || book.MetadataProvider != providerHardcover {
 		return false
 	}
 	rows, err := i.provenance.ListSeriesByItem(ctx, cfg.SourceID, cfg.LibraryID, itemID)

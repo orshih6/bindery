@@ -65,7 +65,7 @@ func (i *Importer) matchHardcoverSeries(ctx context.Context, cfg ImportConfig, r
 		authorName = strings.TrimSpace(author.Name)
 	}
 	inputHash := seriesMatchInputHash(item, queries, authorName, book.ID)
-	if i.seriesMatchAlreadyDone(ctx, cfg, item.ItemID, inputHash) {
+	if i.seriesMatchAlreadyDone(ctx, cfg, book, item.ItemID, inputHash) {
 		return metadataMergeResult{}, seriesUpsertResult{}
 	}
 	// incomplete is set when a Hardcover call failed. A failed call says
