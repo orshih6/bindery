@@ -3,13 +3,9 @@ package api
 import (
 	"context"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/vavallee/bindery/internal/auth"
-	"github.com/vavallee/bindery/internal/config"
 	"github.com/vavallee/bindery/internal/db"
-	"github.com/vavallee/bindery/internal/downloader"
 	"github.com/vavallee/bindery/internal/telemetry"
 )
 
@@ -36,28 +32,15 @@ type SetupState struct {
 	// import — the point at which the checklist has nothing left to say.
 	Complete bool `json:"complete"`
 
-	// Blocked is true when the pipeline worked once (HasImport) but cannot
-	// import right now: a library or download folder is missing or not
-	// writable, no indexer or download client is enabled, or every enabled
-	// client reports a failing path check. It is derived from state Bindery
-	// already holds (stored client health, a short cached folder probe, the
-	// enabled rows), never from a live client call. Only admins see it set;
-	// see blockedState. BlockedReason names the problem and the fix but never
-	// a path. BlockedArea is one of the blockedArea* constants.
+	// Blocked is true when this install has imported through Bindery before
+	// but cannot import right now, and has been that way for a couple of
+	// minutes. See setup_blocked.go for exactly what is checked. Only admins
+	// see it set. BlockedReason names the problem and the fix but never a
+	// path. BlockedArea is one of the blockedArea* constants.
 	Blocked       bool   `json:"blocked"`
 	BlockedReason string `json:"blockedReason,omitempty"`
 	BlockedArea   string `json:"blockedArea,omitempty"`
 }
-
-const (
-	blockedAreaStorage        = "storage"
-	blockedAreaIndexer        = "indexer"
-	blockedAreaDownloadClient = "download-client"
-
-	// storageProbeTTL bounds how often the request path touches the disk. The
-	// checklist polls on page load, and a probe is a stat plus a temp file.
-	storageProbeTTL = 30 * time.Second
-)
 
 // SetupStateHandler serves GET /api/v1/system/setup-state.
 type SetupStateHandler struct {
@@ -66,22 +49,7 @@ type SetupStateHandler struct {
 	authors  *db.AuthorRepo
 	settings *db.SettingsRepo
 
-	cfg    *config.Config
-	health *downloader.HealthStore
-
-	mu         sync.Mutex
-	storageAt  time.Time
-	storageBad bool
-	now        func() time.Time
-}
-
-// WithBlockedChecks supplies the process config (folders to probe) and the
-// download-client health store the blocked state is derived from. Without it
-// the folder and client checks are skipped.
-func (h *SetupStateHandler) WithBlockedChecks(cfg *config.Config, health *downloader.HealthStore) *SetupStateHandler {
-	h.cfg = cfg
-	h.health = health
-	return h
+	blocked blockedChecker
 }
 
 func NewSetupStateHandler(indexers *db.IndexerRepo, clients *db.DownloadClientRepo, authors *db.AuthorRepo, settings *db.SettingsRepo) *SetupStateHandler {
@@ -142,86 +110,8 @@ func (h *SetupStateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Blocked is admin-only: it describes folders and client health, which
 	// this endpoint's non-admin callers are not otherwise shown. Auth
 	// disabled and API key callers are stamped admin by the middleware.
-	if state.HasImport && auth.UserRoleFromContext(ctx) == "admin" {
-		h.applyBlocked(ctx, &state)
+	if auth.UserRoleFromContext(ctx) == "admin" {
+		h.blocked.apply(ctx, h.clients, &state)
 	}
 	writeJSON(w, http.StatusOK, state)
-}
-
-// applyBlocked fills the Blocked fields, most fundamental cause first. It is
-// only called for installs whose pipeline has imported before, so a
-// catalogue-only install that never wanted a download client is not nagged.
-func (h *SetupStateHandler) applyBlocked(ctx context.Context, state *SetupState) {
-	block := func(area, reason string) {
-		state.Blocked, state.BlockedArea, state.BlockedReason = true, area, reason
-	}
-	switch {
-	case h.storageBroken():
-		block(blockedAreaStorage, "A library or download folder is missing or not writable. Check Settings, General, Storage.")
-	case !state.HasIndexer:
-		block(blockedAreaIndexer, "No indexer is enabled, so nothing can be searched. Enable one in Settings, Indexers.")
-	case !state.HasClient:
-		block(blockedAreaDownloadClient, "No download client is enabled, so nothing can be downloaded. Enable one in Settings, Download Clients.")
-	case h.allClientsFailing(ctx):
-		block(blockedAreaDownloadClient, "Every enabled download client is failing its path check, so finished downloads cannot be imported. See Settings, Download Clients.")
-	}
-}
-
-// storageBroken reports whether a configured library or download folder fails
-// config.CheckDir, cached for storageProbeTTL.
-func (h *SetupStateHandler) storageBroken() bool {
-	if h.cfg == nil {
-		return false
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	now := time.Now
-	if h.now != nil {
-		now = h.now
-	}
-	if !h.storageAt.IsZero() && now().Sub(h.storageAt) < storageProbeTTL {
-		return h.storageBad
-	}
-	// Library and download folders are required; the audiobook ones are
-	// optional and only probed when configured.
-	dirs := []string{h.cfg.LibraryDir, h.cfg.DownloadDir}
-	for _, opt := range []string{h.cfg.AudiobookDir, h.cfg.AudiobookDownloadDir} {
-		if opt != "" {
-			dirs = append(dirs, opt)
-		}
-	}
-	bad := false
-	for _, dir := range dirs {
-		if d := config.CheckDir(dir); !d.Exists || !d.Writable {
-			bad = true
-			break
-		}
-	}
-	h.storageAt, h.storageBad = now(), bad
-	return bad
-}
-
-// allClientsFailing is true when at least one client is enabled and every
-// enabled client's stored path check is an error. One healthy client is
-// enough to keep the pipeline moving. Unknown, checking and never-probed
-// clients are not failures.
-func (h *SetupStateHandler) allClientsFailing(ctx context.Context) bool {
-	if h.health == nil {
-		return false
-	}
-	list, err := h.clients.List(ctx)
-	if err != nil {
-		return false
-	}
-	enabled := 0
-	for _, c := range list {
-		if !c.Enabled {
-			continue
-		}
-		enabled++
-		if h.health.ProbeStatus(c.ID) != downloader.HealthError {
-			return false
-		}
-	}
-	return enabled > 0
 }

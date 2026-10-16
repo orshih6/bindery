@@ -1951,10 +1951,10 @@
     "next": "Next:",
     "blocked": {
       "title": "Imports are blocked right now",
-      "storage": "A library or download folder is missing or not writable, so nothing can be imported.",
+      "storage": "A library or download folder is missing or not accessible, so nothing can be imported.",
       "storageAction": "Check storage",
       "indexer": "No indexer is enabled, so nothing can be searched.",
-      "downloadClient": "No download client is enabled, or every enabled one is failing its path check, so finished downloads cannot be imported."
+      "downloadClient": "No download client is enabled, or every enabled one failed its last health check (unreachable, or its download folder is not readable), so finished downloads cannot be imported."
     }
   },
   "protocolMismatch": {

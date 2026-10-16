@@ -5,6 +5,7 @@ import { api, type SetupState } from '../api/client'
 import Alert from './Alert'
 
 const STORAGE_KEY = 'bindery.setupChecklistDismissed'
+const FOCUS_REFETCH_MS = 60_000
 
 interface Step {
   key: 'hasIndexer' | 'hasClient' | 'hasAuthor' | 'hasGrab' | 'hasImport'
@@ -49,7 +50,7 @@ const blockedAreas: Record<string, { to: string; actionKey: string; actionFallba
     actionKey: 'setupChecklist.blocked.storageAction',
     actionFallback: 'Check storage',
     messageKey: 'setupChecklist.blocked.storage',
-    messageFallback: 'A library or download folder is missing or not writable, so nothing can be imported.',
+    messageFallback: 'A library or download folder is missing or not accessible, so nothing can be imported.',
   },
   indexer: {
     to: '/settings?tab=indexers',
@@ -63,7 +64,7 @@ const blockedAreas: Record<string, { to: string; actionKey: string; actionFallba
     actionKey: 'gettingStarted.downloadClients',
     actionFallback: 'Set up Download Clients',
     messageKey: 'setupChecklist.blocked.downloadClient',
-    messageFallback: 'No download client is enabled, or every enabled one is failing its path check, so finished downloads cannot be imported.',
+    messageFallback: 'No download client is enabled, or every enabled one failed its last health check (unreachable, or its download folder is not readable), so finished downloads cannot be imported.',
   },
 }
 
@@ -87,12 +88,32 @@ export default function SetupChecklist() {
     }
   })
 
+  // Fetched on mount and again when the tab regains focus (at most once a
+  // minute), not on a timer. The server only reports a blocked pipeline after it
+  // has persisted for a couple of minutes, so a user who comes back to this tab
+  // is the one who should learn about it. Identical responses keep the old
+  // state object, so a live alert is never re-rendered or re-announced.
   useEffect(() => {
     let cancelled = false
-    api.setupState()
-      .then(s => { if (!cancelled) setState(s) })
-      .catch(() => { /* leave hidden — never block the page on this */ })
-    return () => { cancelled = true }
+    let lastFetch = 0
+    const load = () => {
+      lastFetch = Date.now()
+      api.setupState()
+        .then(s => {
+          if (cancelled) return
+          setState(prev => (prev && JSON.stringify(prev) === JSON.stringify(s) ? prev : s))
+        })
+        .catch(() => { /* leave as is: never block the page on this */ })
+    }
+    const onFocus = () => {
+      if (Date.now() - lastFetch >= FOCUS_REFETCH_MS) load()
+    }
+    load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   // A broken pipeline speaks even after setup is complete or the checklist was

@@ -1557,15 +1557,30 @@ on the download client), or files the container can't read. **Retry import**
 after fixing. ([troubleshooting](Troubleshooting-Wiki.md))
 
 **A red "Imports are blocked right now" notice shows on the Authors page.**
-Bindery has imported at least one book before, but right now it cannot. The
-notice is shown to admins only and says which area to look at: a library or
-download folder that is missing or not writable (Settings → General → Storage),
-no enabled indexer, no enabled download client, or every enabled download
-client failing its path check. It reuses checks Bindery already runs: the
-storage probe (cached for 30 seconds) and the download client health from the
-periodic check, so it can lag a real fix by a few minutes. It never names a
-folder path; the Settings page it links to does. It is not shown on installs
-that have never imported a book, so a catalogue-only setup is not nagged.
+Bindery has imported at least one download before (a `bookImported` or
+`downloadFolderImported` history event), but right now it cannot. The notice is
+shown to admins only and says which area to look at:
+
+- a folder Bindery imports into is missing or not writable: each root folder, or
+  the library folder when you have no root folders (plus the audiobook folder
+  when set);
+- a download folder is missing or not readable. Only readability is required,
+  so a read only download folder used in copy mode is fine. This check is
+  skipped when a path remap is set, globally or on an enabled client, and for an
+  empty download folder (the Windows default);
+- no enabled indexer;
+- no enabled download client;
+- every enabled download client failed its last health check (unreachable, or
+  its download folder is not readable).
+
+Folders are checked without writing anything (no probe files), at most every 30
+seconds. Client health is the stored result of the periodic check, so a fix can
+take a few minutes to register. A problem has to persist for two minutes before
+the notice appears, so a client restarting does not trigger it. The page checks
+when it opens and again when you return to the tab (at most once a minute), not
+on a timer. The notice never names a folder path; the Settings page it links to
+does. Installs that never imported a download, such as ones that only scan an
+existing library or use Calibre or Audiobookshelf, are not nagged.
 (`GET /api/v1/system/setup-state` carries `blocked`, `blockedArea` and
 `blockedReason` for admins.)
 

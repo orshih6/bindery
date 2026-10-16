@@ -51,7 +51,7 @@ describe('SetupChecklist blocked state', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Imports are blocked right now')
-    expect(alert).toHaveTextContent('missing or not writable')
+    expect(alert).toHaveTextContent('missing or not accessible')
     expect(screen.getByRole('link', { name: 'Check storage' })).toHaveAttribute('href', '/settings?tab=general')
   })
 
@@ -86,6 +86,56 @@ describe('SetupChecklist blocked state', () => {
     await waitFor(() => expect(api.setupState).toHaveBeenCalled())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('refetches on window focus after a minute, not before', async () => {
+    const now = vi.spyOn(Date, 'now')
+    now.mockReturnValue(1_000_000)
+    vi.mocked(api.setupState).mockResolvedValue(state())
+    renderIt()
+    await waitFor(() => expect(api.setupState).toHaveBeenCalledTimes(1))
+
+    now.mockReturnValue(1_000_000 + 30_000)
+    window.dispatchEvent(new Event('focus'))
+    expect(api.setupState).toHaveBeenCalledTimes(1)
+
+    vi.mocked(api.setupState).mockResolvedValue(state({ blocked: true, blockedArea: 'storage' }))
+    now.mockReturnValue(1_000_000 + 61_000)
+    window.dispatchEvent(new Event('focus'))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(api.setupState).toHaveBeenCalledTimes(2)
+    now.mockRestore()
+  })
+
+  it('clears the notice when a later fetch says it is fixed', async () => {
+    const now = vi.spyOn(Date, 'now')
+    now.mockReturnValue(1_000_000)
+    vi.mocked(api.setupState).mockResolvedValue(state({ blocked: true, blockedArea: 'storage' }))
+    renderIt()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    vi.mocked(api.setupState).mockResolvedValue(state())
+    now.mockReturnValue(1_000_000 + 61_000)
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    now.mockRestore()
+  })
+
+  // role=alert is announced when inserted, so an unchanged response must keep
+  // the very same element rather than replace it.
+  it('keeps the same alert element when the refetch is identical', async () => {
+    const now = vi.spyOn(Date, 'now')
+    now.mockReturnValue(1_000_000)
+    vi.mocked(api.setupState).mockImplementation(() => Promise.resolve(state({ blocked: true, blockedArea: 'storage' })))
+    renderIt()
+    const first = await screen.findByRole('alert')
+
+    now.mockReturnValue(1_000_000 + 61_000)
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(api.setupState).toHaveBeenCalledTimes(2))
+    await Promise.resolve()
+    expect(screen.getByRole('alert')).toBe(first)
+    now.mockRestore()
   })
 
   it('has its strings in en.json', () => {
