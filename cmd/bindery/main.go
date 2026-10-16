@@ -474,6 +474,7 @@ func main() {
 		WithVersion(version).
 		WithStoragePaths(cfg.LibraryDir, cfg.AudiobookDir, rootFolderRepo).
 		WithMetadata(metaAgg).
+		WithSeriesMatchState(db.NewABSSeriesMatchRepo(database)).
 		WithEnhancedHardcoverSeriesEnabled(func(ctx context.Context) bool {
 			return api.HardcoverFeatureStateFor(ctx, settingsRepo, cfg.EnhancedHardcoverAPI).EnhancedHardcoverAPI
 		}).
