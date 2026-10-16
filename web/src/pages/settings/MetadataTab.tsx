@@ -374,7 +374,10 @@ function MetadataProfileForm({ profile, onClose, onSaved }: { profile?: Metadata
         skipMissingDate,
         skipMissingIsbn,
         skipPartBooks,
-        allowedLanguages: languages.join(','),
+        // The server fills an empty list with English on create, so a new
+        // profile with nothing ticked says "any" outright (#3293). An edit
+        // keeps the empty list it always stored.
+        allowedLanguages: !profile && languages.length === 0 ? 'any' : languages.join(','),
         unknownLanguageBehavior,
       }
       if (profile) {
