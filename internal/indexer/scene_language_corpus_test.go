@@ -44,8 +44,25 @@ var sceneLanguageCorpus = []struct {
 	{"Kari_Nordmann-Fjellvinden-FR-AUDIOBOOK-2021-GRP", []string{"fre"}},
 	{"Kari_Nordmann-Fjellvinden-ES-AUDIOBOOK-2021-GRP", []string{"spa"}},
 	{"Kari_Nordmann-Fjellvinden-DAN-AUDIOBOOK-2021-GRP", []string{"dan"}},
-	// Code before AND after: both are read (the known -DE-EN- limit, documented).
+	// Code before AND after a marker: both are read.
 	{"Kari_Nordmann-Fjellvinden-DE-AUDIOBOOK-WEB-EN-2021-GRP", []string{"ger", "eng"}},
+	// -DE-EN- is only both AFTER a marker; before one, only the code next to it.
+	{"Kari_Nordmann-Fjellvinden-DE-EN-AUDIOBOOK-2021-GRP", []string{"eng"}},
+	{"Kari_Nordmann-Fjellvinden-EN-DE-AUDIOBOOK-2021-GRP", []string{"ger"}},
+	{"Kari_Nordmann-Fjellvinden-AUDIOBOOK-WEB-DE-EN-2021-GRP", []string{"eng", "ger"}},
+	// A disc token is the right marker for the leading rule, but a bare CD is not.
+	{"Kari_Nordmann-Fjellvinden-DE-4CD-FLAC-2005-GRP", []string{"ger"}},
+	{"Kari_Nordmann-Fjellvinden-DE-MP3CD-2005-GRP", []string{"ger"}},
+	{"Kari_Nordmann-Fjellvinden-DE-CD-2005-GRP", nil},
+	{"Kari_Nordmann-Fjellvinden-CD-DE-2005-GRP", nil},
+	// Separators: dot and underscore join, a doubled one does not.
+	{"Kari.Nordmann-Fjellvinden.DE.AUDIOBOOK.2021.GRP", []string{"ger"}},
+	{"Kari_Nordmann_Fjellvinden_DE_AUDIOBOOK_2021_GRP", []string{"ger"}},
+	{"Kari_Nordmann-Fjellvinden-DE--AUDIOBOOK-2021-GRP", nil},
+	{"Kari_Nordmann-Fjellvinden--DE-AUDIOBOOK-2021-GRP", nil},
+	// The year must be a year.
+	{"Kari_Nordmann-Fjellvinden-DE-AUDIOBOOK-1234-GRP", nil},
+	{"Kari_Nordmann-Fjellvinden-DE-AUDIOBOOK-9999-GRP", nil},
 	// Disc token as marker for the suffix reading as well.
 	{"Kari_Nordmann-Fjellvinden-4CD-DE-2010-GRP.nzb", []string{"ger"}},
 
@@ -56,13 +73,33 @@ var sceneLanguageCorpus = []struct {
 	{"Kari_Nordmann-Fjellvinden-WEB-SE-2021-GRP", nil}, // WEB is not a marker: known limit
 	{"Kari_Nordmann-Fjellvinden-WEB-FLAC-2026-TR.nzb", nil},
 
-	// Spaced, human written: code-like tokens as words. A real "Audiobook -
-	// NO 2019" is lost with them, by choice: it cannot be told from "Audiobook
-	// - IT 2017".
+	// Spaced, human written: a capitalised code right before a year or the
+	// group is read, except IT, NO and HI before a final year, which are words.
+	{"Author - Title Audiobook - FR 2019", []string{"fre"}},
+	{"Author - Title [AUDIOBOOK] [DE] 2018", []string{"ger"}},
+	{"Author - Title [AUDIOBOOK] [ES] 2018", []string{"spa"}},
+	{"Author - Title Audiobook - DE - 2016", []string{"ger"}},
+	{"Author - Title MP3 DE 2018", []string{"ger"}},
+	{"Author - Title Audiobook 2018 DE GRP", []string{"ger"}},
+	{"Author - Title Audiobook DE GRP", []string{"ger"}},
+	{"Author - Title Audiobook DAN 2019", []string{"dan"}},
+	{"Author - Title (MP3) 64kbps DE 2019", []string{"ger"}},
+	{"Author - Title ABOOK 2020 NO GRP", []string{"nor"}},
 	{"Author - Title - Audiobook - NO 2019", nil},
-	{"Author - Title [AUDIOBOOK] [ES] 2018", nil},
-	{"Stephen King - Audiobook - IT 2017", nil},
-	{"STEPHEN KING - AUDIOBOOK - IT 2017", nil},
+	{"Author - Title - Audiobook - IT 2019", nil},
+	{"Author - Title - MP3 - Hi 2010", nil},
+	{"AUTHOR - TITLE - MP3 - HI 2010", nil},
+	{"Author - Title MP3 PT 2", nil},
+	{"Author - Title (Audiobook) DE LUXE 2018 GRP", nil},
+	{"Author - Title Audiobook DE 1234", nil},
+	{"Author - Title Audiobook DE 9999", nil},
+	{"Author - Title Audiobook DE 1234 GRP", nil},
+	{"Author - Title Audiobook DE 9999 GRP", nil},
+	// Known residual false positives, the same as on main, pinned so a change
+	// is a decision: a word code before a year with a group after it.
+	{"Author - Title (MP3) Stephen King IT 2018 GRP", []string{"ita"}},
+	{"Author - Title (Audiobook) Dr. NO 2018 GRP", []string{"nor"}},
+	{"Author - Title Audiobook - IT 2019 - GRP", []string{"ita"}},
 	{"Author - Title (Audiobook) READ BY ROBERT DE NIRO", nil},
 	{"Author - Title - DE - Audiobook - 4CD - 2010", nil},
 	{"Author - IT - Audiobook - 2017 - Unabridged", nil},

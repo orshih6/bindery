@@ -1657,7 +1657,7 @@ func sceneLanguageCodes(title string) []string {
 	spaced := strings.ContainsFunc(title[locs[start-1][1]:], unicode.IsSpace)
 	for i := start; i < end; i++ {
 		tok := toks[i]
-		if spaced && (tok != strings.ToUpper(tok) || i+1 >= end || !sceneYearRe.MatchString(toks[i+1])) {
+		if spaced && !spacedSceneCode(toks, i, end) {
 			continue
 		}
 		if code := models.NormalizeReleaseLanguageCode(strings.ToLower(tok)); releaseLanguageCodeSet[code] && !slices.Contains(out, code) {
@@ -1712,6 +1712,32 @@ func sceneLeadingCodes(title string, locs [][]int, toks []string) []string {
 		}
 	}
 	return out
+}
+
+// spacedSceneCode decides whether the all-caps token at i counts as a language
+// code inside a suffix that has spaces in it (end is the group, the last
+// token). Two shapes qualify:
+//
+//   - right before a year: "-DE-2005-GRP iNT", "Audiobook - FR 2019". When
+//     that year is the last token, so no group follows it, IT, NO and HI are
+//     refused, being words ("Audiobook - IT 2017", "Hi 2010", "Dr. NO");
+//   - right before the group, with a marker or a year directly before the
+//     code: "Audiobook DE GRP", "ABOOK 2020 NO GRP". A group that is a bare
+//     number ("MP3 PT 2") is a part counter, not a group.
+//
+// Anything else is prose ("read by Robert DE NIRO", "DE LUXE").
+func spacedSceneCode(toks []string, i, end int) bool {
+	tok := toks[i]
+	if tok != strings.ToUpper(tok) {
+		return false
+	}
+	if i+1 <= end && sceneYearRe.MatchString(toks[i+1]) {
+		return i+1 != end || (tok != "IT" && tok != "NO" && tok != "HI")
+	}
+	if i+1 != end || i == 0 || strings.Trim(toks[end], "0123456789") == "" {
+		return false
+	}
+	return isSceneMarker(toks[i-1]) || sceneYearRe.MatchString(toks[i-1])
 }
 
 // sceneJoint reports whether sep is exactly one scene separator, with no space
