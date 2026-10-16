@@ -1722,8 +1722,9 @@ func sceneLeadingCodes(title string, locs [][]int, toks []string) []string {
 //     that year is the last token, so no group follows it, IT, NO and HI are
 //     refused, being words ("Audiobook - IT 2017", "Hi 2010", "Dr. NO");
 //   - right before the group, with a marker or a year directly before the
-//     code: "Audiobook DE GRP", "ABOOK 2020 NO GRP". A group that is a bare
-//     number ("MP3 PT 2") is a part counter, not a group.
+//     code: "Audiobook DE GRP", "ABOOK 2020 DK GRP". A group that is a bare
+//     number ("MP3 PT 2") is a part counter, not a group, and IT, NO and HI
+//     are refused here too ("3CD IT GRP").
 //
 // Anything else is prose ("read by Robert DE NIRO", "DE LUXE").
 func spacedSceneCode(toks []string, i, end int) bool {
@@ -1734,7 +1735,7 @@ func spacedSceneCode(toks []string, i, end int) bool {
 	if i+1 <= end && sceneYearRe.MatchString(toks[i+1]) {
 		return i+1 != end || (tok != "IT" && tok != "NO" && tok != "HI")
 	}
-	if i+1 != end || i == 0 || strings.Trim(toks[end], "0123456789") == "" {
+	if i+1 != end || i == 0 || strings.Trim(toks[end], "0123456789") == "" || tok == "IT" || tok == "NO" || tok == "HI" {
 		return false
 	}
 	return isSceneMarker(toks[i-1]) || sceneYearRe.MatchString(toks[i-1])

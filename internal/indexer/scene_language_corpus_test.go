@@ -84,7 +84,20 @@ var sceneLanguageCorpus = []struct {
 	{"Author - Title Audiobook DE GRP", []string{"ger"}},
 	{"Author - Title Audiobook DAN 2019", []string{"dan"}},
 	{"Author - Title (MP3) 64kbps DE 2019", []string{"ger"}},
-	{"Author - Title ABOOK 2020 NO GRP", []string{"nor"}},
+	{"Author - Title ABOOK 2020 DK GRP", []string{"dan"}},
+	{"Author - Title ABOOK 2020 NO GRP", nil},
+	{"Author - Title 3CD IT GRP", nil},
+	{"Author - Title 3CD NO GRP", nil},
+	{"Author - Title MP3 IT GRP", nil},
+	{"Author - Title Audiobook 2018 NO GRP", nil},
+	{"Author - Title Audiobook HI GRP", nil},
+	// A true tag lost on purpose: neither a marker nor a year sits directly
+	// before the code.
+	{"Author - Title M4B 64kbps DE GRP", nil},
+	{"Author - Title MP3 - 320 - DE - GRP", nil},
+	// Known residual false positives, as on main: the group is a word.
+	{"Author - Title Audiobook 2018 DE NIRO", []string{"ger"}},
+	{"Author - Title Audiobook MP3 DE LUXE", []string{"ger"}},
 	{"Author - Title - Audiobook - NO 2019", nil},
 	{"Author - Title - Audiobook - IT 2019", nil},
 	{"Author - Title - MP3 - Hi 2010", nil},
