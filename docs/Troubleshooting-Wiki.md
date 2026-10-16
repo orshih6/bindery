@@ -328,6 +328,19 @@ The Queue row is **importBlocked** with a message like `file declares Swedish (s
 
 If the file is what you want after all, press **Match to book** on the row and pick the book, or import it through **Import → From a folder**; a manual import is never refused for its language. To accept more languages for this author from now on, add them to the metadata profile, or set it to any language. Releases already blocklisted for this stay there until you remove them in **Settings → Blocklist**.
 
+### A foreign language audiobook was grabbed by an English profile
+
+Scene audiobook names carry their language only as a short code, and the search filter reads those codes. It reads a code in the suffix after a marker (`audiobook`, `abook`, `mp3`, `m4b`, `flac`, `aac`, or a disc token such as `4CD` or `2MP3CD`), as in `-AUDIOBOOK-WEB-DE-2023-GROUP`, and a capitalised two or three letter code placed just before a marker, as in `Author-Title-DE-AUDIOBOOK-4CD-FLAC-2005-GROUP`. The mangled German words `ungekrzt` and `gekrzt` count as German as well. The code never counts from the title.
+
+The rules are deliberately narrow, because an English release dropped by mistake is worse than a foreign one that slips through:
+
+- A code before a marker is only read in a scene shaped name: capitals joined by single separators to the token before it and to the marker, no spaces from the code to the year, a group after the year, and a lowercase letter somewhere before it (an all caps name tells nothing). `IT` and `NO` are never read before a marker, because they are English words and titles. After a marker they still count.
+- A spaced, human written name only counts a capitalised code that sits right before a year with a group after it. `Audiobook - IT 2017` and `read by Robert De Niro` are not tagged, and neither is a genuine `Audiobook - DE - 2016`.
+- `-WEB-SE-` with no audiobook marker is not read, because `WEB` is not treated as a marker.
+- `-DE-EN-` is tagged both German and English, so an English only profile drops it.
+
+Nothing here has been run against live indexers beyond made up names in the tests. If a foreign release still gets through, its name carries no marker this reading accepts. Blocklist that release in **Settings → Blocklist** so the next search picks another.
+
 ### Bindery cannot read the completed files
 
 **Start with Diagnose.** In **Settings → Download clients**, press **Diagnose** on the client. It works out where Bindery's grabs actually land for ebooks and for audiobooks (the save path Bindery sends, the category's folder, or the client default, and it says which), applies the path remap the same way the importer does, checks that Bindery can read and write the result, and tries a hardlink into each library folder. The panel puts the first thing to fix at the top and shows the paths side by side: where the client puts the files, which remap applied, and where Bindery looks. **Copy report** copies the check results and paths without the host, port or username, so it is safe to paste into an issue or Discord.
