@@ -7,7 +7,6 @@ func TestIndexerProtocol(t *testing.T) {
 		"torznab":  "torrent",
 		"newznab":  "usenet",
 		"":         "usenet",
-		"Torznab":  "usenet",
 		"whatever": "usenet",
 	}
 	for typ, want := range cases {

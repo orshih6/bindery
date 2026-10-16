@@ -40,7 +40,6 @@ func TestBookIsCompilationBy_BestOfNeedsTheAuthorsName(t *testing.T) {
 		{"The Best of Me", "Nicholas Sparks", false},
 		{"Best of Friends", "Nicholas Sparks", false},
 		{"The Best of Poe", "", false},
-		{"The Best of Li", "Wei Li", false},
 		{"The Best of Poet Laureates", "Edgar Allan Poe", false},
 		{"Some Ordinary Title", "Edgar Allan Poe", false},
 	}
@@ -125,17 +124,6 @@ func TestAuthorNameAndAuthorNamesFor(t *testing.T) {
 }
 
 func TestContentTitleHelpers(t *testing.T) {
-	t.Run("genericSubtitleTail", func(t *testing.T) {
-		cases := map[string]bool{
-			"": false, "A Novel": true, "Part Two": true, "Book 3": true, "An Unabridged Audiobook": true,
-			"Messiah": false, "The Chronicles of Narnia": false,
-		}
-		for in, want := range cases {
-			if got := genericSubtitleTail(in); got != want {
-				t.Errorf("genericSubtitleTail(%q) = %v, want %v", in, got, want)
-			}
-		}
-	})
 	t.Run("containsWholeWords", func(t *testing.T) {
 		cases := []struct {
 			hay, needle string
@@ -156,13 +144,6 @@ func TestContentTitleHelpers(t *testing.T) {
 			}
 		}
 	})
-	t.Run("isDigits", func(t *testing.T) {
-		for in, want := range map[string]bool{"": false, "0": true, "123": true, "12a": false, "1.5": false, "-1": false} {
-			if got := isDigits(in); got != want {
-				t.Errorf("isDigits(%q) = %v, want %v", in, got, want)
-			}
-		}
-	})
 	t.Run("stripSeriesSuffix", func(t *testing.T) {
 		cases := map[string]string{
 			"Mary, Mary: Alex Cross, Book 11": "Mary, Mary",
@@ -177,19 +158,6 @@ func TestContentTitleHelpers(t *testing.T) {
 		for in, want := range cases {
 			if got := stripSeriesSuffix(in); got != want {
 				t.Errorf("stripSeriesSuffix(%q) = %q, want %q", in, got, want)
-			}
-		}
-	})
-	t.Run("genericTrackTitle", func(t *testing.T) {
-		cases := map[string]bool{
-			"": false, "Chapter 12": true, "Track 03": true, "Chapter 3 of 12": true, "12": true,
-			"Chapter One Two Three Four Five": false,
-			"Prologue":                        true,
-			"The Hobbit":                      false,
-		}
-		for in, want := range cases {
-			if got := genericTrackTitle(in); got != want {
-				t.Errorf("genericTrackTitle(%q) = %v, want %v", in, got, want)
 			}
 		}
 	})

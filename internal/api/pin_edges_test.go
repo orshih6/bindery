@@ -73,10 +73,28 @@ func TestClientForGrab_Routing(t *testing.T) {
 			t.Fatalf("got %v, %v, %v", c, pin, err)
 		}
 	})
-	t.Run("an id that matches no indexer falls back to the default", func(t *testing.T) {
-		c, pin, err := f.h.clientForGrab(ctx, id(424242), "usenet", "")
-		if err != nil || pin != nil || c.ID != f.pubC.ID {
-			t.Fatalf("got %v, %v, %v", c, pin, err)
+	t.Run("the release protocol must match the pinned client", func(t *testing.T) {
+		f.pin(t, &f.privC.ID)
+		c, pin, err := f.h.clientForGrab(ctx, &f.idx.ID, "torrent", "")
+		var perr *db.PinnedClientError
+		if c != nil || pin != nil || !errors.As(err, &perr) || perr.Reason != db.PinClientWrongProtocol {
+			t.Fatalf("usenet pinned indexer, torrent release: got %v, %v, %v", c, pin, err)
+		}
+		tor := &models.DownloadClient{Name: "qbit", Type: "qbittorrent", Host: "h", Port: 1, Enabled: true}
+		if err := f.clients.Create(ctx, tor); err != nil {
+			t.Fatal(err)
+		}
+		tix := &models.Indexer{Name: "TorX", Type: "torznab", URL: "http://tor.invalid/api", Enabled: true, DownloadClientID: &tor.ID}
+		if err := f.indexers.Create(ctx, tix); err != nil {
+			t.Fatal(err)
+		}
+		c, pin, err = f.h.clientForGrab(ctx, &tix.ID, "usenet", "")
+		if c != nil || pin != nil || !errors.As(err, &perr) || perr.Reason != db.PinClientWrongProtocol {
+			t.Fatalf("torrent pinned indexer, usenet release: got %v, %v, %v", c, pin, err)
+		}
+		c, _, err = f.h.clientForGrab(ctx, &tix.ID, "torrent", "")
+		if err != nil || c == nil || c.ID != tor.ID {
+			t.Fatalf("matching protocol: got %v, %v", c, err)
 		}
 	})
 	t.Run("a pinned indexer gets its client and a pin target", func(t *testing.T) {
