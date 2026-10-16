@@ -24,31 +24,51 @@ export interface HeadingEntry {
   fallback?: string
   /** A heading the tab renders as a literal, not through t(). */
   literal?: string
+  /** The tab only renders this section for admins, so a non admin must not be offered it. */
+  adminOnly?: boolean
 }
 
 export const HEADINGS: HeadingEntry[] = [
+  // General: Appearance and Security are visible to everyone. GeneralTab wraps
+  // everything from file naming down in an isAdmin block, so those are
+  // adminOnly: offering them to a non admin would be a dead end.
   { tab: 'general', key: 'settings.general.appearance' },
-  { tab: 'general', key: 'settings.general.fileNaming' },
-  { tab: 'general', key: 'settings.general.downloads' },
-  { tab: 'general', key: 'settings.general.storage' },
-  { tab: 'general', key: 'settings.general.library' },
-  { tab: 'general', key: 'settings.general.search' },
-  { tab: 'general', key: 'settings.general.hardcoverSync', fallback: 'Hardcover list sync' },
-  { tab: 'general', key: 'settings.general.discovery' },
-  { tab: 'general', key: 'settings.general.defaultLibraryLocation' },
+  { tab: 'general', key: 'settings.general.fileNaming', adminOnly: true },
+  { tab: 'general', key: 'settings.general.downloads', adminOnly: true },
+  { tab: 'general', key: 'settings.general.storage', adminOnly: true },
+  { tab: 'general', key: 'settings.general.library', adminOnly: true },
+  { tab: 'general', key: 'settings.general.search', adminOnly: true },
+  { tab: 'general', key: 'settings.general.hardcoverSync', fallback: 'Hardcover list sync', adminOnly: true },
+  { tab: 'general', key: 'settings.general.discovery', adminOnly: true },
+  { tab: 'general', key: 'settings.general.defaultLibraryLocation', adminOnly: true },
   { tab: 'general', literal: 'Security' },
+  { tab: 'indexers', key: 'settings.indexers.heading' },
   { tab: 'indexers', key: 'settings.prowlarr.heading' },
+  { tab: 'clients', key: 'settings.clients.heading' },
+  { tab: 'notifications', key: 'settings.notifications.heading' },
+  { tab: 'quality', key: 'settings.quality.heading' },
+  { tab: 'metadata', key: 'settings.metadata.heading' },
   { tab: 'metadata', literal: 'Library Defaults' },
+  { tab: 'rootfolders', key: 'settings.rootfolders.heading' },
   { tab: 'import', key: 'settings.import.csvHeading' },
   { tab: 'import', key: 'settings.import.readarrHeading' },
   { tab: 'import', key: 'settings.import.manualImportHeading' },
   { tab: 'import', key: 'settings.import.folderMovedHeading', fallback: 'Import from a folder' },
   { tab: 'import', key: 'settings.import.hardcoverHeading' },
+  { tab: 'import', key: 'settings.import.goodreadsHeading' },
+  { tab: 'calibre', literal: 'Calibre-Web-Automated (CWA)' },
+  { tab: 'calibre', key: 'settings.calibre.pushAll.label' },
+  { tab: 'abs', literal: 'Libraries' },
+  { tab: 'grimmory', literal: 'Push library to Grimmory' },
   { tab: 'api-keys', key: 'settings.general.apiKeys' },
   { tab: 'api-keys', key: 'settings.general.opds' },
+  { tab: 'blocklist', key: 'blocklist.title' },
+  { tab: 'logs', key: 'settings.logs.heading' },
   { tab: 'logs', key: 'settings.general.logRetention' },
   { tab: 'logs', key: 'settings.general.backup' },
   { tab: 'logs', key: 'settings.general.telemetry' },
+  { tab: 'advanced', key: 'settings.advanced.title', fallback: 'Advanced' },
+  { tab: 'about', key: 'settings.about.title', fallback: 'About' },
 ]
 
 export type SearchResult =
@@ -58,17 +78,25 @@ export type SearchResult =
 
 export const MAX_RESULTS = 8
 
+export interface SearchOutcome {
+  /** At most MAX_RESULTS, best first. */
+  results: SearchResult[]
+  /** How many matched before the cap. */
+  total: number
+}
+
 export interface SearchInput {
   query: string
   /** The tabs the viewer can open, in display order. */
   tabs: { id: SettingsTabId; label: string }[]
   t: (key: string, fallback?: string) => string
+  isAdmin: boolean
   /** Registered setting keys; only passed for admins, who can open Advanced. */
   settingKeys?: string[]
 }
 
 function norm(s: string): string {
-  return s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim()
+  return s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
 // Rank 0 is a prefix match, 1 a word prefix, 2 anywhere else, -1 no match.
@@ -79,9 +107,9 @@ function rank(haystack: string, needle: string): number {
   return h.includes(needle) ? 2 : -1
 }
 
-export function searchSettings({ query, tabs, t, settingKeys = [] }: SearchInput): SearchResult[] {
+export function searchSettings({ query, tabs, t, isAdmin, settingKeys = [] }: SearchInput): SearchOutcome {
   const needle = norm(query)
-  if (needle === '') return []
+  if (needle === '') return { results: [], total: 0 }
   const tabLabels = new Map(tabs.map(x => [x.id, x.label]))
   const scored: { r: SearchResult; rank: number; order: number }[] = []
   let order = 0
@@ -93,7 +121,9 @@ export function searchSettings({ query, tabs, t, settingKeys = [] }: SearchInput
   for (const h of HEADINGS) {
     const tabLabel = tabLabels.get(h.tab)
     if (!tabLabel) continue // the viewer cannot open that tab
+    if (h.adminOnly && !isAdmin) continue // the tab hides this section from them
     const heading = h.literal ?? t(h.key as string, h.fallback)
+    if (norm(heading) === norm(tabLabel)) continue // the tab result already covers it
     const k = rank(heading, needle)
     if (k >= 0) scored.push({ r: { kind: 'heading', id: `h:${h.tab}:${h.key ?? h.literal}`, tab: h.tab, tabLabel, heading }, rank: k, order: order++ })
   }
@@ -107,5 +137,5 @@ export function searchSettings({ query, tabs, t, settingKeys = [] }: SearchInput
   // Tab and heading matches outrank key matches, so a short query still lists
   // the tabs first. Within a rank, keep tab order then index order.
   scored.sort((a, b) => a.rank - b.rank || a.order - b.order)
-  return scored.slice(0, MAX_RESULTS).map(s => s.r)
+  return { results: scored.slice(0, MAX_RESULTS).map(s => s.r), total: scored.length }
 }

@@ -15,6 +15,7 @@ export interface SettingsSearchPick {
 
 interface Props {
   tabs: { id: SettingsTabId; label: string }[]
+  isAdmin: boolean
   /** Registered setting keys (admins only), so a key quoted in docs finds Advanced. */
   settingKeys?: string[]
   onPick: (pick: SettingsSearchPick) => void
@@ -22,7 +23,7 @@ interface Props {
   onActivate?: () => void
 }
 
-export default function SettingsSearch({ tabs, settingKeys, onPick, onActivate }: Props) {
+export default function SettingsSearch({ tabs, isAdmin, settingKeys, onPick, onActivate }: Props) {
   const { t } = useTranslation()
   const uid = useId()
   const inputId = `${uid}-input`
@@ -31,17 +32,25 @@ export default function SettingsSearch({ tabs, settingKeys, onPick, onActivate }
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
 
-  const results = useMemo(
-    () => searchSettings({ query, tabs, settingKeys, t: (key, fallback) => t(key, fallback ?? key) }),
-    [query, tabs, settingKeys, t],
+  const [focused, setFocused] = useState(false)
+
+  const { results, total } = useMemo(
+    () => searchSettings({ query, tabs, isAdmin, settingKeys, t: (key, fallback) => t(key, fallback ?? key) }),
+    [query, tabs, isAdmin, settingKeys, t],
   )
 
   // "/" focuses the box, unless the person is already typing somewhere.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.isComposing) return
       const el = e.target as HTMLElement | null
-      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+      if (el && el.closest) {
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return
+        // jsdom has no isContentEditable, so read the attribute too.
+        if (el.isContentEditable || el.closest('[contenteditable=""],[contenteditable="true"]')) return
+        // A modal owns the keyboard while it is open.
+        if (el.closest('[role=dialog],[aria-modal=true]')) return
+      }
       e.preventDefault()
       inputRef.current?.focus()
     }
@@ -56,7 +65,7 @@ export default function SettingsSearch({ tabs, settingKeys, onPick, onActivate }
   }
 
   const open = query.trim() !== ''
-  const showList = open && results.length > 0
+  const showList = open && focused && results.length > 0
   const current = Math.min(active, Math.max(results.length - 1, 0))
   const optionId = (i: number) => `${listId}-${i}`
 
@@ -98,41 +107,51 @@ export default function SettingsSearch({ tabs, settingKeys, onPick, onActivate }
         placeholder={t('settings.search.placeholder')}
         onChange={e => { setQuery(e.target.value); setActive(0) }}
         onKeyDown={onKeyDown}
-        onFocus={onActivate}
-        className="w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-500 dark:placeholder:text-zinc-500 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-emerald-500 -outline-offset-2"
+        onFocus={() => { setFocused(true); onActivate?.() }}
+        onBlur={() => setFocused(false)}
+        className="w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-slate-900 dark:text-zinc-100 focus:outline-hidden -outline-offset-2"
       />
-      <ul
-        id={listId}
-        role="listbox"
-        aria-label={t('settings.search.results')}
+      <div
         hidden={!showList}
-        className="absolute z-20 left-0 right-0 mt-1 max-h-72 overflow-auto rounded border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg"
+        className="absolute z-20 left-0 right-0 mt-1 rounded border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg"
       >
-        {results.map((r, i) => (
-          <li
-            key={r.id}
-            id={optionId(i)}
-            role="option"
-            aria-selected={i === current}
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => pick(r)}
-            className={`cursor-pointer px-3 py-2 text-sm ${
-              i === current
-                ? 'bg-slate-200 dark:bg-zinc-800 text-slate-900 dark:text-white'
-                : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/50'
-            }`}
-          >
-            <span className="font-medium break-words">
-              {r.kind === 'tab' ? r.tabLabel : r.kind === 'heading' ? r.heading : r.settingKey}
-            </span>
-            {r.kind !== 'tab' && (
-              <span className="ml-2 text-xs text-slate-600 dark:text-zinc-400">{r.tabLabel}</span>
-            )}
-          </li>
-        ))}
-      </ul>
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={t('settings.search.results')}
+          className="max-h-72 overflow-auto"
+        >
+          {results.map((r, i) => (
+            <li
+              key={r.id}
+              id={optionId(i)}
+              role="option"
+              aria-selected={i === current}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => pick(r)}
+              className={`cursor-pointer min-h-11 flex flex-wrap items-center gap-x-2 px-3 py-2 text-sm border-l-4 forced-colors:outline-2 -outline-offset-2 ${
+                i === current
+                  ? 'border-emerald-600 dark:border-emerald-500 bg-slate-200 dark:bg-zinc-800 text-slate-900 dark:text-white forced-colors:outline'
+                  : 'border-transparent text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/50'
+              }`}
+            >
+              <span className="font-medium break-words">
+                {r.kind === 'tab' ? r.tabLabel : r.kind === 'heading' ? r.heading : r.settingKey}
+              </span>
+              {r.kind !== 'tab' && (
+                <span className="text-xs text-slate-600 dark:text-zinc-400">{r.tabLabel}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+        {total > results.length && (
+          <p className="px-3 py-2 text-xs text-slate-600 dark:text-zinc-400 border-t border-slate-200 dark:border-zinc-800">
+            {t('settings.search.more', { shown: results.length, total })}
+          </p>
+        )}
+      </div>
       <p role="status" aria-live="polite" className="sr-only">
-        {open ? (results.length === 0 ? t('settings.search.none') : t('settings.search.count', { count: results.length })) : ''}
+        {open ? (results.length === 0 ? t('settings.search.none') : (total > results.length ? t('settings.search.moreAnnounce', { shown: results.length, total }) : t('settings.search.count', { count: results.length }))) : ''}
       </p>
       {open && results.length === 0 && (
         <p className="mt-1 text-xs text-slate-600 dark:text-zinc-400" aria-hidden="true">{t('settings.search.none')}</p>

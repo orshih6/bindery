@@ -266,7 +266,7 @@ export default function SettingsPage() {
     <div>
       <h2 className="text-2xl font-bold mb-6">{t('settings.title')}</h2>
 
-      <SettingsSearch tabs={searchTabs} settingKeys={settingKeys} onPick={onSearchPick} onActivate={loadSettingKeys} />
+      <SettingsSearch tabs={searchTabs} isAdmin={isAdmin} settingKeys={settingKeys} onPick={onSearchPick} onActivate={loadSettingKeys} />
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-8 items-stretch md:items-start">
         {narrow ? (
