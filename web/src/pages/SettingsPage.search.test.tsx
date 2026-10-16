@@ -245,6 +245,16 @@ describe('Settings search', () => {
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('tab=logs'))
   })
 
+  // Chromium makes a scrollable container keyboard focusable. With 8 results
+  // the list scrolls, so Tab from the input would land on the list, blur the
+  // input, hide the list and drop focus to the body: one Tab press lost.
+  it('keeps the scrollable result list out of the Tab order', () => {
+    renderSettings()
+    type('e')
+    expect(screen.getAllByRole('option')).toHaveLength(8)
+    expect(screen.getByRole('listbox')).toHaveAttribute('tabindex', '-1')
+  })
+
   it('wires aria-expanded and aria-controls to the listbox', () => {
     renderSettings()
     expect(box()).toHaveAttribute('aria-expanded', 'false')

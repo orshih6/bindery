@@ -122,6 +122,7 @@ export default function SettingsSearch({ tabs, isAdmin, settingKeys, onPick, onA
         <ul
           id={listId}
           role="listbox"
+          tabIndex={-1}
           aria-label={t('settings.search.results')}
           className="max-h-72 overflow-auto"
         >
