@@ -1556,6 +1556,19 @@ and Bindery seeing the same storage at different paths (set a **path remap**
 on the download client), or files the container can't read. **Retry import**
 after fixing. ([troubleshooting](Troubleshooting-Wiki.md))
 
+**A red "Imports are blocked right now" notice shows on the Authors page.**
+Bindery has imported at least one book before, but right now it cannot. The
+notice is shown to admins only and says which area to look at: a library or
+download folder that is missing or not writable (Settings → General → Storage),
+no enabled indexer, no enabled download client, or every enabled download
+client failing its path check. It reuses checks Bindery already runs: the
+storage probe (cached for 30 seconds) and the download client health from the
+periodic check, so it can lag a real fix by a few minutes. It never names a
+folder path; the Settings page it links to does. It is not shown on installs
+that have never imported a book, so a catalogue-only setup is not nagged.
+(`GET /api/v1/system/setup-state` carries `blocked`, `blockedArea` and
+`blockedReason` for admins.)
+
 **My browser can reach qBittorrent but Bindery's Test fails.**
 In Docker, `localhost` inside Bindery's container is Bindery, not the client —
 use the service name or LAN IP. Also check for qBittorrent's persisted IP ban

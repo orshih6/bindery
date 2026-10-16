@@ -677,7 +677,7 @@ func main() {
 	} else {
 		slog.Warn("download client startup health check skipped", "error", err)
 	}
-	setupStateHandler := api.NewSetupStateHandler(indexerRepo, dlClientRepo, authorRepo, settingsRepo)
+	setupStateHandler := api.NewSetupStateHandler(indexerRepo, dlClientRepo, authorRepo, settingsRepo).WithBlockedChecks(cfg, downloadHealth)
 	dlClientHandler := api.NewDownloadClientHandler(dlClientRepo).
 		WithHealth(downloadHealth).
 		WithContentBreakerReset(importScanner.ResetContentBreaker).

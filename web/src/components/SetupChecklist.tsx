@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { api, type SetupState } from '../api/client'
+import Alert from './Alert'
 
 const STORAGE_KEY = 'bindery.setupChecklistDismissed'
 
 interface Step {
-  key: keyof Omit<SetupState, 'complete'>
+  key: 'hasIndexer' | 'hasClient' | 'hasAuthor' | 'hasGrab' | 'hasImport'
   labelKey: string
   fallback: string
   to?: string
@@ -40,6 +41,32 @@ const STEPS: Step[] = [
   { key: 'hasImport', labelKey: 'setupChecklist.import', fallback: 'First book imported' },
 ]
 
+// Where each server blockedArea points and what it says. The server also
+// sends an English blockedReason; the text here is what gets translated.
+const blockedAreas: Record<string, { to: string; actionKey: string; actionFallback: string; messageKey: string; messageFallback: string }> = {
+  storage: {
+    to: '/settings?tab=general',
+    actionKey: 'setupChecklist.blocked.storageAction',
+    actionFallback: 'Check storage',
+    messageKey: 'setupChecklist.blocked.storage',
+    messageFallback: 'A library or download folder is missing or not writable, so nothing can be imported.',
+  },
+  indexer: {
+    to: '/settings?tab=indexers',
+    actionKey: 'gettingStarted.indexers',
+    actionFallback: 'Set up Indexers',
+    messageKey: 'setupChecklist.blocked.indexer',
+    messageFallback: 'No indexer is enabled, so nothing can be searched.',
+  },
+  'download-client': {
+    to: '/settings?tab=clients',
+    actionKey: 'gettingStarted.downloadClients',
+    actionFallback: 'Set up Download Clients',
+    messageKey: 'setupChecklist.blocked.downloadClient',
+    messageFallback: 'No download client is enabled, or every enabled one is failing its path check, so finished downloads cannot be imported.',
+  },
+}
+
 // First-run progress checklist, shown on the Authors page until the
 // pipeline has produced an import. This is the "your setup works"
 // confirmation the app never had: previously the only signal that setup
@@ -67,6 +94,28 @@ export default function SetupChecklist() {
       .catch(() => { /* leave hidden — never block the page on this */ })
     return () => { cancelled = true }
   }, [])
+
+  // A broken pipeline speaks even after setup is complete or the checklist was
+  // dismissed: the checklist is history, this is the present. The server only
+  // sets it for admins and never includes paths.
+  if (state?.blocked) {
+    const area = blockedAreas[state.blockedArea ?? ''] ?? blockedAreas.storage
+    return (
+      <Alert
+        tier="error"
+        className="mb-6"
+        testId="setup-blocked"
+        title={t('setupChecklist.blocked.title', 'Imports are blocked right now')}
+        actions={
+          <Link to={area.to} className="font-medium underline hover:no-underline whitespace-nowrap">
+            {t(area.actionKey, area.actionFallback)}
+          </Link>
+        }
+      >
+        <span>{t(area.messageKey, area.messageFallback)}</span>
+      </Alert>
+    )
+  }
 
   if (!state || state.complete || dismissed) return null
 

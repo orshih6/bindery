@@ -1948,7 +1948,14 @@
     "grab": "Grab a book",
     "import": "First book imported",
     "progress": "{{done}} of {{total}} steps done",
-    "next": "Next:"
+    "next": "Next:",
+    "blocked": {
+      "title": "Imports are blocked right now",
+      "storage": "A library or download folder is missing or not writable, so nothing can be imported.",
+      "storageAction": "Check storage",
+      "indexer": "No indexer is enabled, so nothing can be searched.",
+      "downloadClient": "No download client is enabled, or every enabled one is failing its path check, so finished downloads cannot be imported."
+    }
   },
   "protocolMismatch": {
     "torrent": "A Torznab indexer is enabled but no torrent download client (qBittorrent, Transmission, Deluge, rTorrent) is — its releases can be found but never downloaded.",
