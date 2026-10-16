@@ -196,21 +196,31 @@ describe('Settings search', () => {
   // GeneralTab renders everything from File Naming down inside an isAdmin
   // block, so offering those headings to a non admin is a dead end.
   it('does not offer a non admin the General sections that tab hides from them', () => {
-    const adminOnly = HEADINGS.filter(h => h.adminOnly)
-    expect(adminOnly.length).toBeGreaterThan(5)
+    // Written out by hand: deriving it from the adminOnly flags would let a
+    // dropped flag remove its own entry from the test. These are the sections
+    // GeneralTab renders inside its isAdmin block.
+    const ADMIN_ONLY = [
+      'settings.general.fileNaming', 'settings.general.downloads', 'settings.general.storage',
+      'settings.general.library', 'settings.general.search', 'settings.general.hardcoverSync',
+      'settings.general.discovery', 'settings.general.defaultLibraryLocation',
+    ]
+    const EVERYONE = ['settings.general.appearance']
+    expect(HEADINGS.filter(h => h.adminOnly).map(h => h.key)).toEqual(ADMIN_ONLY)
     const text = (k: string) => k.split('.').reduce<unknown>((o, p) => (o as Record<string, unknown>)[p], en) as string
+    const general = [...ADMIN_ONLY, ...EVERYONE]
     state.isAdmin = false
     renderSettings()
-    for (const h of adminOnly) {
-      type(text(h.key as string))
-      expect(optionNames(), h.key).toEqual([])
+    for (const k of general) {
+      type(text(k))
+      const offered = optionNames().some(n => n?.endsWith('General') && n.startsWith(text(k)))
+      expect(offered, k).toBe(EVERYONE.includes(k))
     }
     cleanup()
     state.isAdmin = true
     renderSettings()
-    for (const h of adminOnly) {
-      type(text(h.key as string))
-      expect(optionNames().some(n => n?.endsWith('General')), h.key).toBe(true)
+    for (const k of general) {
+      type(text(k))
+      expect(optionNames().some(n => n?.endsWith('General') && n.startsWith(text(k))), k).toBe(true)
     }
   })
 
@@ -227,6 +237,10 @@ describe('Settings search', () => {
     // mousedown must not move focus off the input, or blur would hide the
     // option before the click lands.
     expect(fireEvent.mouseDown(options[0])).toBe(false)
+    // Nor may a mouse down on the list's own box (scrollbar, padding) or the
+    // note under it; those are outside the rows.
+    expect(fireEvent.mouseDown(screen.getByRole('listbox'))).toBe(false)
+    expect(fireEvent.mouseDown(screen.getByRole('listbox').parentElement as HTMLElement)).toBe(false)
     fireEvent.click(options[0])
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('tab=logs'))
   })
@@ -294,6 +308,34 @@ describe('Settings search', () => {
     expect(api.listSettingDescriptors).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps the list open for a mouse down on the more results note', () => {
+    renderSettings()
+    type('e')
+    const note = screen.getByText(/^Showing 8 of \d+/)
+    expect(fireEvent.mouseDown(note)).toBe(false)
+  })
+
+  it('goes back to the first result when the query changes', () => {
+    renderSettings()
+    type('hardcover')
+    fireEvent.keyDown(box(), { key: 'ArrowDown' })
+    expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true')
+    type('hardcove')
+    const options = screen.getAllByRole('option')
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    expect(box()).toHaveAttribute('aria-activedescendant', options[0].id)
+  })
+
+  it('marks the active row with more than colour and keeps every row tall enough to tap', () => {
+    renderSettings()
+    type('hardcover')
+    const [first, second] = screen.getAllByRole('option')
+    for (const row of [first, second]) expect(row).toHaveClass('min-h-11', 'border-l-4')
+    expect(first).toHaveClass('border-emerald-600', 'forced-colors:outline')
+    expect(second).toHaveClass('border-transparent')
+    expect(second).not.toHaveClass('forced-colors:outline')
+  })
+
   describe('the / shortcut', () => {
     it.each([
       ['ctrl', { ctrlKey: true }],
@@ -305,6 +347,21 @@ describe('Settings search', () => {
       renderSettings()
       fireEvent.keyDown(document.body, { key: '/', ...init })
       expect(box()).not.toHaveFocus()
+    })
+
+    it('takes the slash for itself: focuses the box and stops the key reaching the page', () => {
+      renderSettings()
+      expect(fireEvent.keyDown(document.body, { key: '/' })).toBe(false)
+      expect(box()).toHaveFocus()
+    })
+
+    it.each(['textarea', 'select'])('ignores a %s target and leaves the key alone', tag => {
+      renderSettings()
+      const other = document.createElement(tag)
+      document.body.appendChild(other)
+      expect(fireEvent.keyDown(other, { key: '/' })).toBe(true)
+      expect(box()).not.toHaveFocus()
+      other.remove()
     })
 
     it('ignores a form field target', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import en from '../../i18n/locales/en.json'
 import { HEADINGS, MAX_RESULTS, searchSettings, SettingsTabId } from './settingsSearchIndex'
+import { scanHeadings } from './scanHeadings'
 
 const ALL: { id: SettingsTabId; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -105,49 +106,89 @@ describe('HEADINGS', () => {
     }
   })
 
-  // Drift guard: every heading a tab renders must be in the index (or be listed
-  // here with a reason), and every indexed heading must still be rendered.
-  const sources = import.meta.glob('./*{Tab,Section}.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
-  const files = Object.keys(sources)
-  const keyRe = /<h[34][^>]*>\s*\{t\(\s*'([^']+)'/g
-  const litRe = /<h[34][^>]*>\s*([A-Z][A-Za-z() -]+?)\s*<\/h[34]>/g
+  // Drift guard: every heading a settings component renders must be in the
+  // index (or be allowlisted with a reason), and every indexed heading must
+  // still be rendered. It scans every non test .tsx in this directory, so a
+  // panel or section split out of a tab is covered too. The render check in
+  // settingsSearchIndex.render.test.tsx proves the indexed ones are on the page.
+  const sources = import.meta.glob(['./*.tsx', '!./*.test.tsx'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
   // Headings that are deliberately not indexed, with the reason.
   const ALLOWED_KEYS: Record<string, string> = {
-    'settings.calibre.runs.modalTitle': 'a modal title carrying a run id, not a page section',
+    'settings.calibre.runs.modalTitle': 'a modal title carrying a run id, only open on demand',
+    'settings.calibre.pushAll.label': 'the title of the progress dialog shown during a push; on the page it is a label in plugin mode only',
+    'settings.calibre.deliveries.resetTitle': 'the title of a confirmation dialog',
+    'settings.clients.diagnose.heading': 'a panel that appears after Diagnose is pressed',
+    'settings.clients.remapAssist.heading': 'a panel that appears on demand under a client',
   }
   const ALLOWED_LITERALS: Record<string, string> = {
     Calibre: 'the tab title, covered by the tab result',
     Audiobookshelf: 'the tab title, covered by the tab result',
     Grimmory: 'the tab title, covered by the tab result',
   }
-
-  const sourceKeys = new Set<string>()
-  const sourceLiterals = new Set<string>()
-  for (const src of Object.values(sources)) {
-    for (const m of src.matchAll(keyRe)) sourceKeys.add(m[1])
-    for (const m of src.matchAll(litRe)) sourceLiterals.add(m[1])
+  // Headings whose text is an expression, as "file|expression".
+  const ALLOWED_DYNAMIC: Record<string, string> = {
+    'AdvancedTab.tsx|{title}': 'a namespace name from the descriptors',
+    'ClientDiagnosePanel.tsx|{mediaLabel(p.mediaType)}': 'inside the on demand diagnose panel',
   }
 
-  it('finds the tab sources it is meant to scan', () => {
-    expect(files.length).toBeGreaterThan(10)
+  const found = scanHeadings(sources)
+  const sourceKeys = new Set(found.filter(f => f.kind === 'key').map(f => f.value))
+  const sourceLiterals = new Set(found.filter(f => f.kind === 'literal').map(f => f.value))
+  const dynamicIds = found.filter(f => f.kind === 'dynamic').map(f => `${f.file}|${f.value}`)
+
+  it('finds the sources it is meant to scan', () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(20)
     expect(sourceKeys.size).toBeGreaterThan(20)
+    expect(sourceLiterals.size).toBeGreaterThan(5)
   })
 
-  it('indexes every heading the tabs render through t()', () => {
+  it('indexes every heading the components render through t()', () => {
     const indexed = new Set(HEADINGS.map(h => h.key).filter(Boolean))
     expect([...sourceKeys].filter(k => !indexed.has(k) && !ALLOWED_KEYS[k])).toEqual([])
   })
 
-  it('indexes every literal heading the tabs render', () => {
+  it('indexes every literal heading the components render', () => {
     const indexed = new Set(HEADINGS.map(h => h.literal).filter(Boolean))
     expect([...sourceLiterals].filter(l => !indexed.has(l) && !ALLOWED_LITERALS[l])).toEqual([])
   })
 
-  it('does not index a heading no tab renders any more', () => {
+  it('accounts for every heading whose text is an expression or template', () => {
+    // Per row names ({c.name}, {profile.name}) are data, not sections.
+    const rowName = /\|\{[A-Za-z]+\.name\}$/
+    expect(dynamicIds.filter(d => !ALLOWED_DYNAMIC[d] && !rowName.test(d))).toEqual([])
+  })
+
+  it('does not index a heading no component renders any more', () => {
     for (const h of HEADINGS) {
       if (h.key) expect(sourceKeys.has(h.key), h.key).toBe(true)
       if (h.literal) expect(sourceLiterals.has(h.literal), h.literal).toBe(true)
     }
+  })
+
+  it('does not allowlist a heading that no longer exists', () => {
+    for (const k of Object.keys(ALLOWED_KEYS)) expect(sourceKeys.has(k), k).toBe(true)
+    for (const l of Object.keys(ALLOWED_LITERALS)) expect(sourceLiterals.has(l), l).toBe(true)
+    for (const d of Object.keys(ALLOWED_DYNAMIC)) expect(dynamicIds.includes(d), d).toBe(true)
+  })
+})
+
+describe('scanHeadings', () => {
+  const scan = (src: string) => scanHeadings({ './X.tsx': src }).map(f => `${f.kind}:${f.value}`)
+
+  it('reads keys in either quote style, with a fallback or options', () => {
+    expect(scan(`<h3>{t('a.b')}</h3><h2>{t("c.d", 'Fallback')}</h2><h4>{t('e.f', { n: 1 })}</h4>`)).toEqual(['key:a.b', 'key:c.d', 'key:e.f'])
+  })
+
+  it('reads literals of any shape, over several lines', () => {
+    expect(scan(`<h3 className="x">\n  Step 2: set up (optional)\n</h3><h5>lower case</h5>`)).toEqual(['literal:Step 2: set up (optional)', 'literal:lower case'])
+  })
+
+  it('copes with => inside the opening tag', () => {
+    expect(scan(`<h3 onClick={() => go()} className="x">{t('a.b')}</h3>`)).toEqual(['key:a.b'])
+  })
+
+  it('flags expressions and templates instead of skipping them', () => {
+    expect(scan('<h3>{title}</h3><h4>{`${a} b`}</h4><h3>Name {x}</h3>')).toEqual(['dynamic:{title}', 'dynamic:{`${a} b`}', 'dynamic:Name {x}'])
   })
 })

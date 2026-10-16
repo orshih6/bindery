@@ -57,7 +57,6 @@ export const HEADINGS: HeadingEntry[] = [
   { tab: 'import', key: 'settings.import.hardcoverHeading' },
   { tab: 'import', key: 'settings.import.goodreadsHeading' },
   { tab: 'calibre', literal: 'Calibre-Web-Automated (CWA)' },
-  { tab: 'calibre', key: 'settings.calibre.pushAll.label' },
   { tab: 'abs', literal: 'Libraries' },
   { tab: 'grimmory', literal: 'Push library to Grimmory' },
   { tab: 'api-keys', key: 'settings.general.apiKeys' },

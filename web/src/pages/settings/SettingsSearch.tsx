@@ -111,8 +111,12 @@ export default function SettingsSearch({ tabs, isAdmin, settingKeys, onPick, onA
         onBlur={() => setFocused(false)}
         className="w-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-slate-900 dark:text-zinc-100 focus:outline-hidden -outline-offset-2"
       />
+      {/* A mouse down anywhere in the list (rows, scrollbar, padding, the
+          "more" note) must not take focus off the input, or the blur would
+          close the list before the click lands. */}
       <div
         hidden={!showList}
+        onMouseDown={e => e.preventDefault()}
         className="absolute z-20 left-0 right-0 mt-1 rounded border border-slate-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg"
       >
         <ul
@@ -127,8 +131,7 @@ export default function SettingsSearch({ tabs, isAdmin, settingKeys, onPick, onA
               id={optionId(i)}
               role="option"
               aria-selected={i === current}
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => pick(r)}
+                onClick={() => pick(r)}
               className={`cursor-pointer min-h-11 flex flex-wrap items-center gap-x-2 px-3 py-2 text-sm border-l-4 forced-colors:outline-2 -outline-offset-2 ${
                 i === current
                   ? 'border-emerald-600 dark:border-emerald-500 bg-slate-200 dark:bg-zinc-800 text-slate-900 dark:text-white forced-colors:outline'
