@@ -50,7 +50,7 @@ const blockedAreas: Record<string, { to: string; actionKey: string; actionFallba
     actionKey: 'setupChecklist.blocked.storageAction',
     actionFallback: 'Check storage',
     messageKey: 'setupChecklist.blocked.storage',
-    messageFallback: 'A library or download folder is missing or not accessible, so nothing can be imported.',
+    messageFallback: 'A library or download folder is not available, so imports that use it will fail.',
   },
   indexer: {
     to: '/settings?tab=indexers',
@@ -126,7 +126,7 @@ export default function SetupChecklist() {
         tier="error"
         className="mb-6"
         testId="setup-blocked"
-        title={t('setupChecklist.blocked.title', 'Imports are blocked right now')}
+        title={t('setupChecklist.blocked.title', 'Imports have a problem right now')}
         actions={
           <Link to={area.to} className="font-medium underline hover:no-underline whitespace-nowrap">
             {t(area.actionKey, area.actionFallback)}

@@ -50,8 +50,8 @@ describe('SetupChecklist blocked state', () => {
     renderIt()
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Imports are blocked right now')
-    expect(alert).toHaveTextContent('missing or not accessible')
+    expect(alert).toHaveTextContent('Imports have a problem right now')
+    expect(alert).toHaveTextContent('not available')
     expect(screen.getByRole('link', { name: 'Check storage' })).toHaveAttribute('href', '/settings?tab=general')
   })
 

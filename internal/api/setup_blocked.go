@@ -26,6 +26,14 @@ const (
 	// continuously (across requests) before it is reported. A qBittorrent
 	// restart or a single failed probe clears itself well inside this.
 	blockedPersistFor = 2 * time.Minute
+	// blockedStaleAfter is how long a gap between sightings is allowed before
+	// the debounce clock restarts. Sightings come from page loads and tab
+	// focus (at most once a minute), so a gap this long means nobody was
+	// looking and the earlier sighting says nothing about the time between. Ten
+	// minutes is five debounce windows: long enough that a user returning to the
+	// tab now and then still accumulates, short enough that a blip hours ago
+	// cannot pre-date a fresh one.
+	blockedStaleAfter = 10 * time.Minute
 )
 
 // blockedChecker derives SetupState.Blocked from state Bindery already holds.
@@ -74,6 +82,7 @@ type blockedChecker struct {
 	inflight   chan struct{}
 	sinceArea  string
 	since      time.Time
+	lastSeen   time.Time
 }
 
 // WithBlockedChecks supplies what the blocked state is derived from. Without
@@ -120,7 +129,7 @@ func (bc *blockedChecker) cause(ctx context.Context, clients *db.DownloadClientR
 	}
 	switch {
 	case bc.storageBroken(ctx, list):
-		return blockedAreaStorage, "A library or download folder is missing or not accessible. Check Settings, General, Storage."
+		return blockedAreaStorage, "A library or download folder is not available (missing or not accessible), so imports that use it will fail. Check Settings, General, Storage."
 	case !state.HasIndexer:
 		return blockedAreaIndexer, "No indexer is enabled, so nothing can be searched. Enable one in Settings, Indexers."
 	case !state.HasClient:
@@ -137,9 +146,10 @@ func (bc *blockedChecker) persisted(area string) bool {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	now := bc.clock()
-	if bc.sinceArea != area {
+	if bc.sinceArea != area || now.Sub(bc.lastSeen) > blockedStaleAfter {
 		bc.sinceArea, bc.since = area, now
 	}
+	bc.lastSeen = now
 	return now.Sub(bc.since) >= blockedPersistFor
 }
 

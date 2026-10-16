@@ -440,6 +440,136 @@ func TestSetupStateBlocked_DebouncesBlips(t *testing.T) {
 	}
 }
 
+// A blip, a long gap with nobody looking, then a fresh blip must not read as a
+// condition that has lasted the whole time.
+func TestSetupStateBlocked_IdleGapRestartsTheClock(t *testing.T) {
+	f := newBlockedFixture(t)
+	f.health.Set(f.clientID, models.DownloadClientHealth{Status: downloader.HealthError})
+	f.get(t, "admin") // blip seen at t0
+	f.health.Set(f.clientID, models.DownloadClientHealth{Status: downloader.HealthOK})
+
+	f.clock = f.clock.Add(6 * time.Hour)
+	f.health.Set(f.clientID, models.DownloadClientHealth{Status: downloader.HealthError})
+	if s, _ := f.get(t, "admin"); s.Blocked {
+		t.Fatal("debounce bypassed by a stale sighting")
+	}
+	f.clock = f.clock.Add(blockedPersistFor + time.Second)
+	if s, _ := f.get(t, "admin"); !s.Blocked {
+		t.Fatal("a persistent failure after the gap was never reported")
+	}
+}
+
+// Sightings spaced inside the stale window do accumulate.
+func TestSetupStateBlocked_RegularSightingsAccumulate(t *testing.T) {
+	f := newBlockedFixture(t)
+	f.health.Set(f.clientID, models.DownloadClientHealth{Status: downloader.HealthError})
+	for i := 0; i < 3; i++ {
+		f.get(t, "admin")
+		f.clock = f.clock.Add(blockedStaleAfter / 2)
+	}
+	if s, _ := f.get(t, "admin"); !s.Blocked {
+		t.Fatal("sightings inside the stale window did not accumulate")
+	}
+}
+
+// A different cause is a different condition and gets its own full clock.
+func TestSetupStateBlocked_AreaChangeRestartsTheClock(t *testing.T) {
+	f := newBlockedFixture(t)
+	good := f.cfg.LibraryDir
+	f.cfg.LibraryDir = filepath.Join(f.lib, "gone")
+	f.wantBlocked(t, "storage")
+
+	// Storage recovers and, in the same moment, the indexer goes away.
+	f.cfg.LibraryDir = good
+	f.h.blocked.storageAt = time.Time{}
+	list, _ := f.indexers.List(context.Background())
+	list[0].Enabled = false
+	if err := f.indexers.Update(context.Background(), &list[0]); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := f.get(t, "admin"); s.Blocked {
+		t.Fatalf("new cause inherited the old clock: %+v", s)
+	}
+	f.wantBlockedAfterWindow(t, "indexer")
+}
+
+func (f *blockedFixture) wantBlockedAfterWindow(t *testing.T, area string) {
+	t.Helper()
+	f.clock = f.clock.Add(blockedPersistFor + time.Second)
+	if s, _ := f.get(t, "admin"); !s.Blocked || s.BlockedArea != area {
+		t.Fatalf("want blocked %s after its own window, got %+v", area, s)
+	}
+}
+
+// Nothing identifying about the install may reach a response: not a folder
+// path, not a root folder name, not a client host or its health message.
+func TestSetupStateBlocked_ResponseNamesNoPathHostOrMessage(t *testing.T) {
+	const (
+		libMarker  = "identifiable-library-marker"
+		rootMarker = "identifiable-root-marker"
+		dlMarker   = "identifiable-download-marker"
+		hostMarker = "identifiable-host.invalid"
+		msgMarker  = "identifiable-client-message"
+	)
+	markers := []string{libMarker, rootMarker, dlMarker, hostMarker, msgMarker}
+	assertClean := func(t *testing.T, f *blockedFixture, area string) {
+		t.Helper()
+		s := f.settled(t)
+		if !s.Blocked || s.BlockedArea != area {
+			t.Fatalf("want blocked %s, got %+v", area, s)
+		}
+		_, body := f.get(t, "admin")
+		for _, m := range markers {
+			if strings.Contains(body, m) {
+				t.Errorf("%s response leaks %q: %s", area, m, body)
+			}
+		}
+	}
+	newF := func(t *testing.T) *blockedFixture {
+		f := newBlockedFixture(t)
+		f.cfg.LibraryDir = filepath.Join(f.lib, libMarker)
+		f.cfg.DownloadDir = filepath.Join(f.dl, dlMarker)
+		list, _ := f.clients.List(context.Background())
+		list[0].Host = hostMarker
+		if err := f.clients.Update(context.Background(), &list[0]); err != nil {
+			t.Fatal(err)
+		}
+		f.health.Set(f.clientID, models.DownloadClientHealth{Status: downloader.HealthError, Message: msgMarker})
+		return f
+	}
+
+	t.Run("storage", func(t *testing.T) {
+		f := newF(t)
+		if _, err := f.roots.Create(context.Background(), filepath.Join(f.lib, rootMarker)); err != nil {
+			t.Fatal(err)
+		}
+		assertClean(t, f, "storage")
+	})
+	t.Run("indexer", func(t *testing.T) {
+		f := newF(t)
+		for _, d := range []string{f.cfg.LibraryDir, f.cfg.DownloadDir} {
+			if err := os.MkdirAll(d, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		list, _ := f.indexers.List(context.Background())
+		list[0].Enabled = false
+		if err := f.indexers.Update(context.Background(), &list[0]); err != nil {
+			t.Fatal(err)
+		}
+		assertClean(t, f, "indexer")
+	})
+	t.Run("download-client", func(t *testing.T) {
+		f := newF(t)
+		for _, d := range []string{f.cfg.LibraryDir, f.cfg.DownloadDir} {
+			if err := os.MkdirAll(d, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		assertClean(t, f, "download-client")
+	})
+}
+
 func TestSetupStateBlocked_NonAdminNeverSeesIt(t *testing.T) {
 	f := newBlockedFixture(t)
 	f.cfg.LibraryDir = filepath.Join(f.lib, "gone")

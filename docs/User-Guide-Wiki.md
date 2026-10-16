@@ -1556,7 +1556,7 @@ and Bindery seeing the same storage at different paths (set a **path remap**
 on the download client), or files the container can't read. **Retry import**
 after fixing. ([troubleshooting](Troubleshooting-Wiki.md))
 
-**A red "Imports are blocked right now" notice shows on the Authors page.**
+**A red "Imports have a problem right now" notice shows on the Authors page.**
 Bindery has imported at least one download before (a `bookImported` or
 `downloadFolderImported` history event), but right now it cannot. The notice is
 shown to admins only and says which area to look at:
@@ -1574,12 +1574,32 @@ shown to admins only and says which area to look at:
   its download folder is not readable).
 
 Folders are checked without writing anything (no probe files), at most every 30
-seconds. Client health is the stored result of the periodic check, so a fix can
-take a few minutes to register. A problem has to persist for two minutes before
-the notice appears, so a client restarting does not trigger it. The page checks
-when it opens and again when you return to the tab (at most once a minute), not
-on a timer. The notice never names a folder path; the Settings page it links to
-does. Installs that never imported a download, such as ones that only scan an
+seconds. The notice never names a folder path; the Settings page it links to
+does. Limits worth knowing:
+
+- **It needs two views.** A problem has to be seen for two minutes before the
+  notice appears. The page checks when it opens and again when you return to
+  the tab (at most once a minute), not on a timer. So the first view after a
+  restart, or the first view of a new problem, only starts the clock; the notice
+  shows on a view at least two minutes later (a reload or switching back to the
+  tab). If more than ten minutes pass between views the clock starts over, and a
+  user who stays on one page the whole time sees nothing.
+- **Client health is slow.** It is the stored result of the 15 minute periodic
+  check. A client that restarted for a moment can show red for up to about 15
+  minutes after the two minute wait, and a fix takes as long to clear. The
+  message says the client could not be reached or its download folder is not
+  readable, because the check cannot tell which.
+- **A hung mount reports nothing.** If a network mount never answers its first
+  check, there is no earlier result to fall back on, so nothing is reported
+  until it answers.
+- **One folder is enough.** A single unavailable root folder (an external drive
+  you took offline on purpose) raises the notice even though imports into your
+  other root folders still work. The message says one library or download folder
+  is not available, not that everything is blocked.
+- On Windows only the folder's existence and that it can be opened are checked,
+  not whether it is writable.
+
+Installs that never imported a download, such as ones that only scan an
 existing library or use Calibre or Audiobookshelf, are not nagged.
 (`GET /api/v1/system/setup-state` carries `blocked`, `blockedArea` and
 `blockedReason` for admins.)
