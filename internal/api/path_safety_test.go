@@ -687,3 +687,97 @@ func TestSafeRemoveBookPathExact_AudiobookDirectory(t *testing.T) {
 		t.Error("audiobook directory should be removed when no sibling format remains")
 	}
 }
+
+// CheckContained must accept and refuse exactly what ResolveContained does; it
+// only adds why a path was refused (#3332).
+func TestLibraryRoots_CheckContained(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	roots := NewLibraryRoots(staticRootLister{paths: []string{root}})
+	ctx := context.Background()
+
+	file := filepath.Join(root, "a.epub")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "s.epub")
+	if err := os.WriteFile(secret, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	escape := filepath.Join(root, "escape.epub")
+	if err := os.Symlink(secret, escape); err != nil {
+		t.Fatal(err)
+	}
+	dangling := filepath.Join(root, "dangling.epub")
+	if err := os.Symlink(filepath.Join(root, "gone.epub"), dangling); err != nil {
+		t.Fatal(err)
+	}
+
+	danglingOut := filepath.Join(root, "dangling-out.epub")
+	if err := os.Symlink(filepath.Join(outside, "gone.epub"), danglingOut); err != nil {
+		t.Fatal(err)
+	}
+	escapeDir := filepath.Join(root, "escapedir")
+	if err := os.Symlink(outside, escapeDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		path string
+		want ContainResult
+	}{
+		{"existing in root", file, ContainOK},
+		{"the root itself", root, ContainOK},
+		{"missing in root", filepath.Join(root, "x", "missing.epub"), ContainUnreadable},
+		{"dangling link to an in-root target", dangling, ContainOutside},
+		{"dangling link to an outside target", danglingOut, ContainOutside},
+		{"missing leaf through an escaping link", filepath.Join(escapeDir, "nonexistent"), ContainOutside},
+		{"deeper missing path through an escaping link", filepath.Join(escapeDir, "no", "x"), ContainOutside},
+		{"existing file through an escaping link", filepath.Join(escapeDir, "s.epub"), ContainOutside},
+		{"symlink escaping the root", escape, ContainOutside},
+		{"existing outside", secret, ContainOutside},
+		{"missing outside", filepath.Join(outside, "missing.epub"), ContainOutside},
+		{"dot dot out through a missing name", filepath.Join(root, "nope", "..", "..", filepath.Base(outside), "s.epub"), ContainOutside},
+		{"relative", "a.epub", ContainOutside},
+		{"empty", "", ContainOutside},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resolved, got := roots.CheckContained(ctx, c.path)
+			if got != c.want {
+				t.Errorf("CheckContained(%q) = %v, want %v", c.path, got, c.want)
+			}
+			rResolved, ok := roots.ResolveContained(ctx, c.path)
+			if ok != (c.want == ContainOK) || rResolved != resolved {
+				t.Errorf("ResolveContained(%q) = %q, %v disagrees with CheckContained %q, %v", c.path, rResolved, ok, resolved, got)
+			}
+		})
+	}
+}
+
+// A root reached through a symlink still counts as "written inside" for the
+// wording, whichever spelling the stored path uses.
+func TestLibraryRoots_CheckContained_SymlinkedRoot(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for name, c := range map[string]struct{ root, path string }{
+		"root is the link, path via real":     {link, filepath.Join(real, "gone.epub")},
+		"root is the real dir, path via link": {real, filepath.Join(link, "gone.epub")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			roots := NewLibraryRoots(nil, c.root)
+			if _, got := roots.CheckContained(ctx, c.path); got != ContainUnreadable {
+				t.Errorf("CheckContained(%q) = %v, want ContainUnreadable", c.path, got)
+			}
+		})
+	}
+}
