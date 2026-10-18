@@ -127,6 +127,15 @@ and three more:
   main title, so `The High Druid of Shannara 3 - Straken` is not `High Druid of
   Shannara: Jarka Ruus`.
 
+- A bare series entry is not its numbered volumes. When the wanted title has no
+  series position but your library already holds `Rotten School #12 - Battle of
+  the Dum Diddys` under the same author, `R L Stine - [Rotten School 12] -
+  Battle of the Dum Diddys (epub)` is dropped for the wanted `Rotten School`
+  (`release names a different series number after this title`), and so is the
+  plain `Rotten School - Battle of the Dum Diddys`. Only a library title that
+  starts with the wanted title and a number of 2 or more counts, so titles that
+  end in a number, such as `Catch-22` or `Apollo 13`, are unaffected.
+
 The limit: with no series position, no library title that matches the main
 title, and no full title among the results, a lone `Legion (2012)` is still
 approved for `Legion: Skin Deep`. Nothing in the release or the library says
