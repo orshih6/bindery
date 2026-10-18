@@ -242,13 +242,46 @@ type trailingRules struct {
 	// title of any length. Part 2 asks whether the wanted book's main title
 	// is itself another of the author's books.
 	otherFull map[string]bool
+	// siblingNums are the series numbers the library already gives to books
+	// titled "<wanted title> <N> ..." (#3335). With no stored position of its
+	// own, the wanted book cannot say which numbers are later volumes, but
+	// these are known to be other books.
+	siblingNums map[int]bool
+}
+
+// siblingTail reads a library title that is the wanted title followed by a
+// series number and a further title ("Rotten School #12 - Battle of the Dum
+// Diddys"). It returns the number and the title after it. ok is false for any
+// other shape, so a title that merely contains the wanted one is untouched.
+func siblingTail(cleaned string, wanted []string) (num int, tail string, ok bool) {
+	if len(wanted) == 0 {
+		return 0, "", false
+	}
+	norm := NormalizeRelease(cleaned)
+	loc := phraseRegex(wanted).FindStringIndex(norm)
+	if loc == nil || loc[0] != 0 {
+		return 0, "", false
+	}
+	toks := strings.Fields(norm[loc[1]:])
+	i := 0
+	for i < len(toks) && seriesNumberMarkers[toks[i]] {
+		i++
+	}
+	if i >= len(toks) || len(toks[i]) > 2 || !isAllDigits(toks[i]) {
+		return 0, "", false
+	}
+	n, _ := strconv.Atoi(toks[i])
+	if n < 2 {
+		return 0, "", false
+	}
+	return n, strings.Join(toks[i+1:], " "), true
 }
 
 // newTrailingRules prepares the rules for one wanted title. wanted are the
 // identity word lists of every reading of the wanted title, used to keep a
 // library title that contains the wanted one out of signal B.
 func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailingRules {
-	tr := &trailingRules{otherFull: map[string]bool{}}
+	tr := &trailingRules{otherFull: map[string]bool{}, siblingNums: map[int]bool{}}
 	tr.posLo, tr.posHi, tr.posKnown = parsePosition(bc.seriesPosition)
 	if f := strings.Fields(title); len(f) > 0 {
 		last := strings.Trim(f[len(f)-1], ".,:;!?()[]")
@@ -287,7 +320,14 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 		if isSetTitle(cleaned) {
 			continue
 		}
-		for _, v := range []string{cleaned, primaryTitle(cleaned), newznab.SeriesPositionTitle(cleaned)} {
+		variants := []string{cleaned, primaryTitle(cleaned), newznab.SeriesPositionTitle(cleaned)}
+		if !tr.posKnown && len(wanted) > 0 {
+			if n, tail, ok := siblingTail(cleaned, wanted[0]); ok {
+				tr.siblingNums[n] = true
+				variants = append(variants, tail)
+			}
+		}
+		for _, v := range variants {
 			ident := titleIdentityKeywords(v)
 			if len(ident) < 2 {
 				continue
@@ -528,7 +568,7 @@ func numbersAfter(raw, n string, guarded bool, idents ...[]string) []int {
 
 // seriesNumberAfter is signal A. toks[k:] is what follows the wanted title.
 func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
-	if !tr.posKnown {
+	if !tr.posKnown && len(tr.siblingNums) == 0 {
 		return ""
 	}
 	i := k
@@ -553,7 +593,14 @@ func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
 			n = v
 		}
 	}
-	if n < 2 || (n >= tr.posLo && n <= tr.posHi) {
+	if n < 2 {
+		return ""
+	}
+	if tr.posKnown {
+		if n >= tr.posLo && n <= tr.posHi {
+			return ""
+		}
+	} else if !tr.siblingNums[n] {
 		return ""
 	}
 	if strings.Contains(num.sep, "#") {
