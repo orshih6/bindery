@@ -483,6 +483,10 @@ func (s stubOwner) PathOwnedByOtherBook(_ context.Context, path string, _ int64)
 	return s.owned[path], nil
 }
 
+func (s stubOwner) PathUnderOtherLiveBookDir(_ context.Context, _ string, _ int64) (bool, error) {
+	return false, s.err
+}
+
 // TestSafeRemoveBookPath_OwnershipErrorFailsSafe covers the deliberate
 // fail-closed branch: if ownership can't be established, the disk delete is
 // skipped. A stranded path is recoverable; a deleted file is not.

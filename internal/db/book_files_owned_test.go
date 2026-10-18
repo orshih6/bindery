@@ -238,3 +238,45 @@ func TestBookFileRepo_PathOwnedVariantsOnAnOrphanRow(t *testing.T) {
 		}
 	}
 }
+
+// TestBookFileRepo_PathUnderOtherLiveBookDir (#3336): a folder row covers every
+// file below it at any depth, not a sibling that only shares its name prefix, a
+// row of the asking book, or a folder left by a deleted book.
+func TestBookFileRepo_PathUnderOtherLiveBookDir(t *testing.T) {
+	database, author, gone := openTestDB(t)
+	ctx := context.Background()
+	files := NewBookFileRepo(database)
+	box := secondBook(t, database, author.ID, "Box")
+	child := secondBook(t, database, author.ID, "Child")
+	if err := files.Add(ctx, box.ID, models.MediaTypeAudiobook, "/lib/A/Box"); err != nil {
+		t.Fatal(err)
+	}
+	if err := files.Add(ctx, gone.ID, models.MediaTypeAudiobook, "/lib/A/Gone"); err != nil {
+		t.Fatal(err)
+	}
+	orphanBookRows(t, database, gone.ID)
+
+	for _, c := range []struct {
+		name    string
+		path    string
+		exclude int64
+		want    bool
+	}{
+		{"direct child", "/lib/A/Box/01.mp3", child.ID, true},
+		{"deep descendant", "/lib/A/Box/Vol 2/Disc 1/01.mp3", child.ID, true},
+		{"unclean path", "/lib/A/Box/Vol 2/../Vol 3/01.mp3", child.ID, true},
+		{"the folder's own book", "/lib/A/Box/Vol 2/01.mp3", box.ID, false},
+		{"name prefix sibling", "/lib/A/Box 2/01.mp3", child.ID, false},
+		{"the folder row itself is not its own ancestor", "/lib/A/Box", child.ID, false},
+		{"folder left by a deleted book", "/lib/A/Gone/01.mp3", child.ID, false},
+		{"untracked", "/lib/B/01.mp3", child.ID, false},
+	} {
+		got, err := files.PathUnderOtherLiveBookDir(ctx, c.path, c.exclude)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

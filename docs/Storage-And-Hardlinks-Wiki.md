@@ -63,6 +63,12 @@ Bindery checks for that before it creates anything. When two files would collide
 
 To import such a download, either rename one of the files at the source and retry, or use **Queue → Manual import** to place the files by hand.
 
+## Audiobook folders that contain other books
+
+An audiobook is tracked as its whole folder, so a box set folder such as `Series 1-4/` with a subfolder per volume can sit beside books that track one of those subfolders or tracks as their own.
+
+Deleting a book with its files, or one of its files, never removes a file that another book tracks, and never removes a file that sits under a folder another book tracks. Bindery logs the skipped path and leaves it on disk, so a delete can leave files behind in such a folder. Remove them by hand once you are sure which book they belong to.
+
 ## Download folders
 
 | Variable | Purpose |

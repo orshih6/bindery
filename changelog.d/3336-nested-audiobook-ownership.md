@@ -1,0 +1,2 @@
+### Fixed
+- **Deleting a book no longer removes files that belong to a book nested inside its folder** (#3336). Reported by foobarbigtime. An audiobook tracked as a whole folder, such as a box set with a subfolder per volume, can contain a folder that another book tracks as its own. Deleting a book with its files, or one of its files, used to protect only a file another book tracked by its exact path, so the files in that nested folder could be removed. Bindery now skips any file that sits under a folder another book tracks, leaves it on disk, and logs it.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -413,6 +414,37 @@ func (r *BookFileRepo) PathOwnedByLiveOtherBook(ctx context.Context, path string
 		return false, fmt.Errorf("book_files live owner lookup: %w", err)
 	}
 	return owner != excludeBookID, nil
+}
+
+// PathUnderOtherLiveBookDir reports whether a strict ancestor directory of path
+// is itself registered in book_files by a live book other than excludeBookID.
+// An audiobook is often recorded as its whole folder, and that row covers every
+// file below it at any depth, so a file there is not free to delete or adopt
+// just because no row names it exactly (#3336). Ancestors are resolved
+// lexically, the same way every other path in book_files is compared. A row
+// left by a deleted book does not count: it covers nothing.
+func (r *BookFileRepo) PathUnderOtherLiveBookDir(ctx context.Context, path string, excludeBookID int64) (bool, error) {
+	var ancestors []any
+	for dir := filepath.Dir(filepath.Clean(path)); ; dir = filepath.Dir(dir) {
+		if dir == "." || dir == string(filepath.Separator) || dir == filepath.Dir(dir) {
+			break
+		}
+		ancestors = append(ancestors, dir)
+	}
+	if len(ancestors) == 0 {
+		return false, nil
+	}
+	query := `SELECT bf.book_id FROM book_files bf JOIN books b ON b.id = bf.book_id
+		 WHERE bf.book_id != ? AND bf.path IN (?` + strings.Repeat(",?", len(ancestors)-1) + `) LIMIT 1`
+	var owner int64
+	err := r.db.QueryRowContext(ctx, query, append([]any{excludeBookID}, ancestors...)...).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("book_files ancestor owner lookup: %w", err)
+	}
+	return true, nil
 }
 
 // LiveOwnerOfPath returns the id of the existing book that tracks path, or 0
