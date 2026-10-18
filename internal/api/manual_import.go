@@ -550,11 +550,11 @@ func (h *ManualImportHandler) removeStaleSource(ctx context.Context, src string,
 	}
 	// Never delete src while a book still tracks it in book_files — another
 	// record may legitimately own this exact path. Fail safe on error (#1368).
-	if owned, err := h.books.PathOwnedByOtherBook(ctx, src, 0); err != nil {
+	if owned, err := pathGuardedByOtherBook(ctx, h.books, 0, src); err != nil {
 		slog.Warn("reassign cleanup: could not verify source ownership; leaving file in place", "path", src, "error", err)
 		return
 	} else if owned {
-		slog.Warn("reassign cleanup: source path still tracked by a book; leaving file in place", "path", src)
+		slog.Warn("reassign cleanup: source path still tracked by a book, or inside a folder one tracks; leaving file in place", "path", src)
 		return
 	}
 	if err := os.Remove(src); err != nil {
