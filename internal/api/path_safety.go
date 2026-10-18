@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -314,7 +315,9 @@ func resolveRootPrefix(p string) (string, bool) {
 	if real, err := filepath.EvalSymlinks(p); err == nil {
 		return real, true
 	}
-	if _, err := os.Lstat(p); err == nil {
+	// Lstat through an fs.FS rooted at the parent, so the name is looked up
+	// without following a final symlink and no raw path reaches os.Lstat.
+	if _, err := fs.Lstat(os.DirFS(filepath.Dir(p)), filepath.Base(p)); err == nil {
 		return "", false
 	}
 	parent := filepath.Dir(p)
