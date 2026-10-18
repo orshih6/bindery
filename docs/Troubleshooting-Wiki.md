@@ -789,7 +789,7 @@ docker exec -it bindery ls -l "/books_drive/Audiobooks/Author/Book/file.mp3"
 
 The image is minimal and may have no `ls`. If so, check the bind mount instead: the host folder must be mapped to the same path in the container, the drive must be up when the container starts, and `user: "UID:GID"` in Compose must be able to read it. On Docker Desktop with WSL a drive that was unmounted or slept can leave a stale mount, so restart the container after it is back. If the file really was renamed, use **Forget this file** on the book and let a scan register the new name.
 
-**"path is outside the configured library roots: ..."** The file exists but does not resolve under any listed root. Either add its real folder in Settings, Root Folders, or replace the symlink inside your library with the file itself. A link that points out of a root is refused on purpose.
+**"path is outside the configured library roots: ..."** The path does not resolve under any listed root. That is what you get for a file outside them, for a link inside a library that points out of it, and also for a file that does not exist outside them, because Bindery deliberately answers the same way whether or not anything is there. The message does not mean the file exists. Either add the real folder in Settings, Root Folders, or replace the symlink inside your library with the file itself. A link that points out of a root is refused on purpose.
 
 ## A scan leaves files unmatched
 

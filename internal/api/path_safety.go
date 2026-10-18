@@ -239,7 +239,7 @@ const (
 	// every root (a symlink or ".." out). This is the only refusal that means
 	// "outside the library".
 	ContainOutside
-	// ContainUnreadable: the path is written inside a root but cannot be
+	// ContainUnreadable: the path resolves inside a root but cannot be
 	// resolved (missing, renamed, unmounted, dangling link, permission
 	// denied), so containment could not be proven. It is refused exactly like
 	// ContainOutside; only the explanation differs.
@@ -265,8 +265,8 @@ func (r *LibraryRoots) CheckContained(ctx context.Context, p string) (string, Co
 		// containment, so refuse. (Contains is lenient here for the delete
 		// path, where the input is a trusted DB row rather than a
 		// user-supplied path that might be a symlink out of the library.)
-		// Whether it is written inside a root decides only the wording.
-		if r.lexicallyInRoot(ctx, clean) {
+		// Whether it resolves inside a root decides only the wording.
+		if r.resolvesInRoot(ctx, clean) {
 			return "", ContainUnreadable
 		}
 		return "", ContainOutside
@@ -290,22 +290,58 @@ func (r *LibraryRoots) CheckContained(ctx context.Context, p string) (string, Co
 	return "", ContainOutside
 }
 
-// lexicallyInRoot reports whether the cleaned absolute path p is written under
-// (or equal to) a configured root, as typed or through symlinks on either side. It is used only to pick the wording of a refusal and
-// never to accept a path.
-func (r *LibraryRoots) lexicallyInRoot(ctx context.Context, p string) bool {
-	// Also try the path with its existing prefix resolved, so a missing file
-	// reached through a symlinked folder is judged by where that folder lands.
-	forms := []string{p}
-	if real, ok := resolveWithMissingTail(p); ok && real != p {
-		forms = append(forms, real)
+// resolvesInRoot reports whether the cleaned absolute path p, once its deepest
+// existing ancestor is resolved through every symlink and the missing tail is
+// appended, lands under (or at) a configured root. It is used only to pick the
+// wording of a refusal and never to accept a path. It deliberately ignores how
+// p was typed: a path that runs through a link pointing outside every root
+// resolves outside, so it must be indistinguishable from any other outside
+// path, whether or not the file exists there.
+func (r *LibraryRoots) resolvesInRoot(ctx context.Context, p string) bool {
+	real, ok := resolvePrefixThroughLinks(p, 0)
+	return ok && r.underAnyRoot(ctx, real)
+}
+
+// maxLinkHops bounds how many dangling links resolvePrefixThroughLinks follows.
+const maxLinkHops = 40
+
+// resolvePrefixThroughLinks resolves the deepest existing ancestor of p and
+// appends the missing tail. Unlike resolveWithMissingTail it also follows a
+// dangling symlink to where its target would be, so a link whose target is
+// missing is judged by that target. It reports false when it cannot decide.
+func resolvePrefixThroughLinks(p string, hops int) (string, bool) {
+	if hops > maxLinkHops {
+		return "", false
 	}
-	for _, p := range forms {
-		if r.underAnyRoot(ctx, p) {
-			return true
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real, true
+	}
+	if fi, err := os.Lstat(p); err == nil {
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return "", false
 		}
+		target, err := os.Readlink(p)
+		if err != nil {
+			return "", false
+		}
+		if !filepath.IsAbs(target) {
+			parent, ok := resolvePrefixThroughLinks(filepath.Dir(p), hops+1)
+			if !ok {
+				return "", false
+			}
+			target = filepath.Join(parent, target)
+		}
+		return resolvePrefixThroughLinks(filepath.Clean(target), hops+1)
 	}
-	return false
+	parent := filepath.Dir(p)
+	if parent == p {
+		return p, true
+	}
+	head, ok := resolvePrefixThroughLinks(parent, hops+1)
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(head, filepath.Base(p)), true
 }
 
 func (r *LibraryRoots) underAnyRoot(ctx context.Context, p string) bool {

@@ -673,7 +673,16 @@ func TestLibraryRoots_CheckContained(t *testing.T) {
 		t.Fatal(err)
 	}
 	dangling := filepath.Join(root, "dangling.epub")
-	if err := os.Symlink(filepath.Join(outside, "gone.epub"), dangling); err != nil {
+	if err := os.Symlink(filepath.Join(root, "gone.epub"), dangling); err != nil {
+		t.Fatal(err)
+	}
+
+	danglingOut := filepath.Join(root, "dangling-out.epub")
+	if err := os.Symlink(filepath.Join(outside, "gone.epub"), danglingOut); err != nil {
+		t.Fatal(err)
+	}
+	escapeDir := filepath.Join(root, "escapedir")
+	if err := os.Symlink(outside, escapeDir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -685,7 +694,11 @@ func TestLibraryRoots_CheckContained(t *testing.T) {
 		{"existing in root", file, ContainOK},
 		{"the root itself", root, ContainOK},
 		{"missing in root", filepath.Join(root, "x", "missing.epub"), ContainUnreadable},
-		{"dangling link in root", dangling, ContainUnreadable},
+		{"dangling link to an in-root target", dangling, ContainUnreadable},
+		{"dangling link to an outside target", danglingOut, ContainOutside},
+		{"missing leaf through an escaping link", filepath.Join(escapeDir, "nonexistent"), ContainOutside},
+		{"deeper missing path through an escaping link", filepath.Join(escapeDir, "no", "x"), ContainOutside},
+		{"existing file through an escaping link", filepath.Join(escapeDir, "s.epub"), ContainOutside},
 		{"symlink escaping the root", escape, ContainOutside},
 		{"existing outside", secret, ContainOutside},
 		{"missing outside", filepath.Join(outside, "missing.epub"), ContainOutside},

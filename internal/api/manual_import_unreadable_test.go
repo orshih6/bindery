@@ -81,11 +81,11 @@ func TestManualImport_MissingInRootFileSaysCannotRead(t *testing.T) {
 	}
 }
 
-func TestManualImport_DanglingLinkInRootSaysCannotRead(t *testing.T) {
+func TestManualImport_DanglingLinkToInRootTargetSaysCannotRead(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	link := filepath.Join(root, "gone.mp3")
-	if err := os.Symlink(filepath.Join(t.TempDir(), "nowhere.mp3"), link); err != nil {
+	if err := os.Symlink(filepath.Join(root, "nowhere.mp3"), link); err != nil {
 		t.Fatal(err)
 	}
 	assertUnreadable(t, manualImportCalls(containmentHandler(root), link), "gone.mp3")
@@ -177,4 +177,70 @@ func TestManualImport_ReadableInRootFileAccepted(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The cannot-read answer must never tell a caller anything about files outside
+// the roots. Every request that resolves outside every root, existing or not,
+// directly or through a link inside a root, must get the same 403 body.
+func TestManualImport_OutsideProbesAreIndistinguishable(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "passwd"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "etc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "later"), filepath.Join(root, "danglingout")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "etc"), filepath.Join(root, "chain")); err != nil {
+		t.Fatal(err)
+	}
+	h := containmentHandler(root)
+	paths := map[string]string{
+		"existing direct":                 filepath.Join(outside, "passwd"),
+		"missing direct":                  filepath.Join(outside, "nonexistent"),
+		"missing deeper direct":           filepath.Join(outside, "nonexist", "x"),
+		"existing via escaping link":      filepath.Join(root, "etc", "passwd"),
+		"missing leaf via escaping link":  filepath.Join(root, "etc", "nonexistent"),
+		"deeper missing via escaping":     filepath.Join(root, "etc", "nonexist", "x"),
+		"dangling link to outside target": filepath.Join(root, "danglingout"),
+		"below dangling outside link":     filepath.Join(root, "danglingout", "sub", "f.mp3"),
+		"via a chain of links":            filepath.Join(root, "chain", "nonexistent"),
+	}
+	want := map[string]string{}
+	for route, rec := range manualImportCalls(h, filepath.Join(outside, "passwd")) {
+		want[route] = rec.Body.String()
+	}
+	for name, p := range paths {
+		for route, rec := range manualImportCalls(h, p) {
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("%s %s: status = %d, want 403; body = %s", name, route, rec.Code, rec.Body.String())
+			}
+			if rec.Body.String() != want[route] {
+				t.Errorf("%s %s: body %q differs from %q", name, route, rec.Body.String(), want[route])
+			}
+		}
+	}
+}
+
+// A missing file below a symlinked folder inside the root, and a dangling link
+// whose target is inside the root, are still the honest cannot-read answer.
+func TestManualImport_InRootThroughLinksSaysCannotRead(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real/later.mp3", filepath.Join(root, "rel-dangling.mp3")); err != nil {
+		t.Fatal(err)
+	}
+	h := containmentHandler(root)
+	assertUnreadable(t, manualImportCalls(h, filepath.Join(root, "alias", "gone.mp3")), "gone.mp3")
+	assertUnreadable(t, manualImportCalls(h, filepath.Join(root, "rel-dangling.mp3")), "rel-dangling.mp3")
 }
