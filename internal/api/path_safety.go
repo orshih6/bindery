@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -315,20 +314,32 @@ func resolveRootPrefix(p string) (string, bool) {
 	if real, err := filepath.EvalSymlinks(p); err == nil {
 		return real, true
 	}
-	// Lstat through an fs.FS rooted at the parent, so the name is looked up
-	// without following a final symlink and no raw path reaches os.Lstat.
-	if _, err := fs.Lstat(os.DirFS(filepath.Dir(p)), filepath.Base(p)); err == nil {
-		return "", false
-	}
 	parent := filepath.Dir(p)
 	if parent == p {
 		return p, true
 	}
-	head, ok := resolveRootPrefix(parent)
-	if !ok {
-		return "", false
+	base := filepath.Base(p)
+	head, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		head, ok := resolveRootPrefix(parent)
+		if !ok {
+			return "", false
+		}
+		return filepath.Join(head, base), true
 	}
-	return filepath.Join(head, filepath.Base(p)), true
+	// The parent resolved, so look the name up among its entries. The listing
+	// uses the resolved parent and only compares names, so no raw path reaches a
+	// filesystem call. A name that is listed yet did not resolve is a dangling
+	// link or a loop. An unreadable parent lists nothing, so its children count
+	// as missing, as they would for any caller that cannot see them.
+	if entries, err := os.ReadDir(head); err == nil {
+		for _, e := range entries {
+			if e.Name() == base {
+				return "", false
+			}
+		}
+	}
+	return filepath.Join(head, base), true
 }
 
 func (r *LibraryRoots) underAnyRoot(ctx context.Context, p string) bool {
