@@ -1561,6 +1561,19 @@ describe('SeriesPage filters', () => {
       expect(screen.getByRole('status')).toHaveTextContent('No series match "solo" with this filter')
     })
 
+    it('treats a series that arrives without a books key as empty, in neither group', async () => {
+      // The API omits `books` for an empty series (json omitempty).
+      const noKey = { ...series(5, 'No Key', []), books: undefined } as unknown as Series
+      const { unmount } = renderAt([...sized, noKey], enhancedOff, '/series?size=single')
+      expect(await screen.findByRole('heading', { name: 'Solo' })).toBeInTheDocument()
+      expect(headings()).toEqual(['Solo'])
+      unmount()
+
+      renderAt([...sized, noKey], enhancedOff, '/series?size=multi')
+      expect(await screen.findByRole('heading', { name: 'Pair' })).toBeInTheDocument()
+      expect(headings()).toEqual(['Pair', 'Trio'])
+    })
+
     it('starts the list clean when the size changes, like the status filter', async () => {
       renderAt(sized, enhancedOff)
       expect(await screen.findByRole('heading', { name: 'Solo' })).toBeInTheDocument()
