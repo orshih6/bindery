@@ -831,6 +831,12 @@
       "unlinked": "Not linked to Hardcover",
       "shortlisted": "Shortlisted"
     },
+    "sizeLabel": "Series size",
+    "size": {
+      "any": "Any size",
+      "single": "1 book",
+      "multi": "2+ books"
+    },
     "filterMissingHint": "Series showing a missing badge. With Hardcover linking on, this counts catalogue books you do not have yet, exactly as the badge does.",
     "title": "Series",
     "count_one": "{{count}} series",

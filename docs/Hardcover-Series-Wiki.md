@@ -38,7 +38,9 @@ Next to the search, the filter buttons narrow the list without changing anything
 - **Not linked to Hardcover** shows series with no Hardcover link. It appears only when enhanced Hardcover data is on.
 - **Shortlisted** shows series you added to your shortlist.
 
-The filter combines with the title search and is kept in the page address (`?filter=missing`), so reloading, going back or sharing the link keeps it. Filtering never marks books wanted, monitors them, runs searches or fills gaps.
+A second row of buttons filters by how many books a series holds: **Any size**, **1 book** and **2+ books**. It uses the number of books the series already lists, so it needs no Hardcover data. It is a quick way to see the one book series in a large library. It combines with the status filter and the title search, and the "N of M series" count follows it.
+
+The filter combines with the title search and is kept in the page address (`?filter=missing`, and `?size=single` or `?size=multi` for the size), so reloading, going back or sharing the link keeps it. Filtering never marks books wanted, monitors them, runs searches or fills gaps.
 
 1. Open **Library → Series**.
 2. Create a series manually, or open an existing series populated from your library metadata.

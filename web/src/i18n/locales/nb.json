@@ -754,6 +754,12 @@
       "unlinked": "Ikke koblet til Hardcover",
       "shortlisted": "På kortlisten"
     },
+    "sizeLabel": "Seriestørrelse",
+    "size": {
+      "any": "Alle størrelser",
+      "single": "1 bok",
+      "multi": "2+ bøker"
+    },
     "filterMissingHint": "Serier som viser merket for manglende bøker. Med Hardcover-kobling slått på teller dette bøker i katalogen som du ikke har ennå, akkurat som merket gjør.",
     "merge": {
       "button": "Slå sammen…",

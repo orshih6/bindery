@@ -1487,6 +1487,89 @@ describe('SeriesPage filters', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Missing books' }))
     expect(headings()).toEqual(['Gappy'])
   })
+
+  // Book count filter (#3317): computed from series.books.length alone.
+  describe('size filter', () => {
+    const sized = [
+      series(1, 'Solo', [book(11, 'imported')]),
+      series(2, 'Pair', [book(21, 'imported'), book(22, 'wanted')], { monitored: true }),
+      series(3, 'Trio', [book(31, 'imported'), book(32, 'imported'), book(33, 'imported')]),
+      series(4, 'Empty Shell', []),
+    ]
+    const sizeGroup = () => screen.getByRole('group', { name: 'Series size' })
+
+    it('narrows to one book series and to series with two or more', async () => {
+      renderAt(sized, enhancedOff)
+      expect(await screen.findByRole('heading', { name: 'Solo' })).toBeInTheDocument()
+      expect(within(sizeGroup()).getByRole('button', { name: 'Any size' })).toHaveAttribute('aria-pressed', 'true')
+
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: '1 book' }))
+      expect(headings()).toEqual(['Solo'])
+      expect(within(sizeGroup()).getByRole('button', { name: '1 book' })).toHaveAttribute('aria-pressed', 'true')
+      expect(currentSearch).toBe('?size=single')
+      expect(screen.getByText('1 of 4 series')).toBeInTheDocument()
+
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: '2+ books' }))
+      expect(headings()).toEqual(['Pair', 'Trio'])
+      expect(currentSearch).toBe('?size=multi')
+      expect(screen.getByText('2 of 4 series')).toBeInTheDocument()
+
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: 'Any size' }))
+      expect(headings()).toHaveLength(4)
+      expect(currentSearch).toBe('')
+      expect(screen.getByText('4 series')).toBeInTheDocument()
+
+      // Read only.
+      expect(api.fillSeries).not.toHaveBeenCalled()
+      expect(api.fillSeriesAll).not.toHaveBeenCalled()
+      expect(api.monitorSeries).not.toHaveBeenCalled()
+      expect(api.getSeriesHardcoverDiff).not.toHaveBeenCalled()
+      expect(api.listSeries).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads the size from the URL and ignores an unknown value', async () => {
+      const { unmount } = renderAt(sized, enhancedOff, '/series?size=multi')
+      expect(await screen.findByRole('heading', { name: 'Pair' })).toBeInTheDocument()
+      expect(headings()).toEqual(['Pair', 'Trio'])
+      unmount()
+
+      renderAt(sized, enhancedOff, '/series?size=bogus')
+      expect(await screen.findByRole('heading', { name: 'Solo' })).toBeInTheDocument()
+      expect(headings()).toHaveLength(4)
+      expect(within(sizeGroup()).getByRole('button', { name: 'Any size' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByText('4 series')).toBeInTheDocument()
+    })
+
+    it('combines with the status filter, keeping both params, and with the title search', async () => {
+      renderAt(sized, enhancedOff, '/series?filter=missing')
+      expect(await screen.findByRole('heading', { name: 'Pair' })).toBeInTheDocument()
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: '1 book' }))
+      expect(headings()).toEqual([])
+      expect(screen.getByRole('status')).toHaveTextContent('No series match this filter')
+      expect(currentSearch).toBe('?filter=missing&size=single')
+
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: '2+ books' }))
+      expect(headings()).toEqual(['Pair'])
+      fireEvent.click(screen.getByRole('button', { name: 'All' }))
+      expect(currentSearch).toBe('?size=multi')
+      expect(headings()).toEqual(['Pair', 'Trio'])
+
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search series…' }), { target: { value: 'tri' } })
+      expect(headings()).toEqual(['Trio'])
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search series…' }), { target: { value: 'solo' } })
+      expect(headings()).toEqual([])
+      expect(screen.getByRole('status')).toHaveTextContent('No series match "solo" with this filter')
+    })
+
+    it('starts the list clean when the size changes, like the status filter', async () => {
+      renderAt(sized, enhancedOff)
+      expect(await screen.findByRole('heading', { name: 'Solo' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('heading', { name: 'Solo' }))
+      // The open card is not kept past a change of size: the list starts clean.
+      fireEvent.click(within(sizeGroup()).getByRole('button', { name: '2+ books' }))
+      expect(headings()).toEqual(['Pair', 'Trio'])
+    })
+  })
 })
 
 // The heading, count, buttons and card labels were hardcoded English, so a
