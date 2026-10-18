@@ -694,7 +694,7 @@ func TestLibraryRoots_CheckContained(t *testing.T) {
 		{"existing in root", file, ContainOK},
 		{"the root itself", root, ContainOK},
 		{"missing in root", filepath.Join(root, "x", "missing.epub"), ContainUnreadable},
-		{"dangling link to an in-root target", dangling, ContainUnreadable},
+		{"dangling link to an in-root target", dangling, ContainOutside},
 		{"dangling link to an outside target", danglingOut, ContainOutside},
 		{"missing leaf through an escaping link", filepath.Join(escapeDir, "nonexistent"), ContainOutside},
 		{"deeper missing path through an escaping link", filepath.Join(escapeDir, "no", "x"), ContainOutside},

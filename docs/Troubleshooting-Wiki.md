@@ -781,7 +781,7 @@ If you reshape your library regularly, **Rename files** on the book or author pa
 
 These come from the Import page and the **Reassign file to another book** window, and they mean different things.
 
-**"Bindery cannot read this file: NAME."** The path sits inside one of your library folders on paper, but Bindery could not open it. The file was moved or renamed, the drive is not mounted, a link points at nothing, or the account Bindery runs as is not allowed to read the folder. Older versions reported this case as "outside the configured library roots" even though the root they listed contained the file ([#3332](https://github.com/vavallee/bindery/discussions/3332)). Check from inside the container, because the path that matters is the one the container sees:
+**"Bindery cannot read this file: NAME."** The path sits inside one of your library folders, but Bindery could not open it. The file was moved or renamed, the drive is not mounted, or the account Bindery runs as is not allowed to read the folder. A file that is itself a link to something missing gets the outside roots message below instead, deliberately. Older versions reported this case as "outside the configured library roots" even though the root they listed contained the file ([#3332](https://github.com/vavallee/bindery/discussions/3332)). Check from inside the container, because the path that matters is the one the container sees:
 
 ```
 docker exec -it bindery ls -l "/books_drive/Audiobooks/Author/Book/file.mp3"
@@ -789,7 +789,7 @@ docker exec -it bindery ls -l "/books_drive/Audiobooks/Author/Book/file.mp3"
 
 The image is minimal and may have no `ls`. If so, check the bind mount instead: the host folder must be mapped to the same path in the container, the drive must be up when the container starts, and `user: "UID:GID"` in Compose must be able to read it. On Docker Desktop with WSL a drive that was unmounted or slept can leave a stale mount, so restart the container after it is back. If the file really was renamed, use **Forget this file** on the book and let a scan register the new name.
 
-**"path is outside the configured library roots: ..."** The path does not resolve under any listed root. That is what you get for a file outside them, for a link inside a library that points out of it, and also for a file that does not exist outside them, because Bindery deliberately answers the same way whether or not anything is there. The message does not mean the file exists. Either add the real folder in Settings, Root Folders, or replace the symlink inside your library with the file itself. A link that points out of a root is refused on purpose.
+**"path is outside the configured library roots: ..."** The path does not resolve under any listed root. That is what you get for a file outside them, for a link inside a library that points out of it, and also for a file that does not exist outside them, and for a link that points at nothing or loops back on itself, because Bindery deliberately answers the same way whether or not anything is there. The message does not mean the file exists. Either add the real folder in Settings, Root Folders, or replace the symlink inside your library with the file itself. A link that points out of a root is refused on purpose.
 
 ## A scan leaves files unmatched
 

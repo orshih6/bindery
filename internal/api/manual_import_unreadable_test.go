@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // manualImportCalls runs one path through every manual-import route that
@@ -81,14 +82,14 @@ func TestManualImport_MissingInRootFileSaysCannotRead(t *testing.T) {
 	}
 }
 
-func TestManualImport_DanglingLinkToInRootTargetSaysCannotRead(t *testing.T) {
+func TestManualImport_DanglingLinkIsOutside(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	link := filepath.Join(root, "gone.mp3")
 	if err := os.Symlink(filepath.Join(root, "nowhere.mp3"), link); err != nil {
 		t.Fatal(err)
 	}
-	assertUnreadable(t, manualImportCalls(containmentHandler(root), link), "gone.mp3")
+	assertOutside(t, manualImportCalls(containmentHandler(root), link))
 }
 
 func TestManualImport_UnreadableInRootFileSaysCannotRead(t *testing.T) {
@@ -237,10 +238,90 @@ func TestManualImport_InRootThroughLinksSaysCannotRead(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "alias")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("real/later.mp3", filepath.Join(root, "rel-dangling.mp3")); err != nil {
+	h := containmentHandler(root)
+	assertUnreadable(t, manualImportCalls(h, filepath.Join(root, "alias", "gone.mp3")), "gone.mp3")
+}
+
+// A relative dangling link is never followed by string arithmetic: the kernel
+// applies ".." after resolving a symlink component, so joining and cleaning
+// the target would misplace it. Every shape below lands outside the roots (or
+// cannot be decided) and must answer the same 403 whether or not the target
+// exists, so nothing one directory above the root can be probed.
+func TestManualImport_RelativeLinkProbesAreIndistinguishable(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	for _, d := range []string{root, filepath.Join(base, "outside"), filepath.Join(root, "sub"), filepath.Join(root, "lib")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := func(target, name string) string {
+		p := filepath.Join(root, name)
+		if err := os.Symlink(target, p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	link("../outside", "relout")
+	link("sub", "relin")
+	rel2 := link("relout/../zz", "rel2")
+	rel4 := link("relout/../outside/zz", "rel4")
+	rel5 := link("relin/../lib/zz", "rel5")
+	loop := link("loopb", "loopa")
+	link("loopa", "loopb")
+	h := containmentHandler(root)
+	// Missing first, then the same names once their targets exist.
+	probe := func() map[string]string {
+		out := map[string]string{}
+		for name, p := range map[string]string{"rel2": rel2, "rel4": rel4, "rel5": rel5, "loop": loop, "below loop": filepath.Join(loop, "x")} {
+			for route, rec := range manualImportCalls(h, p) {
+				if rec.Code != http.StatusForbidden {
+					t.Errorf("%s %s: status = %d, want 403; body = %s", name, route, rec.Code, rec.Body.String())
+				}
+				out[name+" "+route] = rec.Body.String()
+			}
+		}
+		return out
+	}
+	missing := probe()
+	for _, f := range []string{filepath.Join(base, "zz"), filepath.Join(base, "outside", "zz")} {
+		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	existing := probe()
+	for k, v := range missing {
+		// Byte identical to the outside answer, existing target or not. rel5
+		// lands inside the root and is only accepted once its target exists.
+		if strings.HasPrefix(k, "rel5") {
+			continue
+		}
+		if existing[k] != v {
+			t.Errorf("%s: missing and existing targets differ: %q vs %q", k, v, existing[k])
+		}
+	}
+	for k, v := range missing {
+		if !strings.Contains(v, "outside the configured library roots") {
+			t.Errorf("%s: body %q is not the outside roots text", k, v)
+		}
+	}
+}
+
+// A symlink loop must be refused quickly and with the same 403.
+func TestManualImport_SymlinkLoopIsFastAndForbidden(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.Symlink("loopb", filepath.Join(root, "loopa")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("loopa", filepath.Join(root, "loopb")); err != nil {
 		t.Fatal(err)
 	}
 	h := containmentHandler(root)
-	assertUnreadable(t, manualImportCalls(h, filepath.Join(root, "alias", "gone.mp3")), "gone.mp3")
-	assertUnreadable(t, manualImportCalls(h, filepath.Join(root, "rel-dangling.mp3")), "rel-dangling.mp3")
+	start := time.Now()
+	assertOutside(t, manualImportCalls(h, filepath.Join(root, "loopa")))
+	if d := time.Since(start); d > 100*time.Millisecond {
+		t.Errorf("four loop requests took %v, want well under 100ms", d)
+	}
 }

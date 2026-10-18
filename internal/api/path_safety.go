@@ -298,46 +298,30 @@ func (r *LibraryRoots) CheckContained(ctx context.Context, p string) (string, Co
 // resolves outside, so it must be indistinguishable from any other outside
 // path, whether or not the file exists there.
 func (r *LibraryRoots) resolvesInRoot(ctx context.Context, p string) bool {
-	real, ok := resolvePrefixThroughLinks(p, 0)
+	real, ok := resolveRootPrefix(p)
 	return ok && r.underAnyRoot(ctx, real)
 }
 
-// maxLinkHops bounds how many dangling links resolvePrefixThroughLinks follows.
-const maxLinkHops = 40
-
-// resolvePrefixThroughLinks resolves the deepest existing ancestor of p and
-// appends the missing tail. Unlike resolveWithMissingTail it also follows a
-// dangling symlink to where its target would be, so a link whose target is
-// missing is judged by that target. It reports false when it cannot decide.
-func resolvePrefixThroughLinks(p string, hops int) (string, bool) {
-	if hops > maxLinkHops {
-		return "", false
-	}
+// resolveRootPrefix resolves the deepest existing ancestor of p through
+// every symlink and appends the missing tail. It reports false when it cannot
+// decide: a name that exists but does not resolve (a dangling link, a link
+// loop) is not followed. Following one would mean joining its target onto a
+// directory and cleaning the result, and ".." in a target applies after the
+// kernel resolves the component before it, so string arithmetic would put the
+// file somewhere else. Such a path is refused as outside, the same answer
+// every other undecidable path gets.
+func resolveRootPrefix(p string) (string, bool) {
 	if real, err := filepath.EvalSymlinks(p); err == nil {
 		return real, true
 	}
-	if fi, err := os.Lstat(p); err == nil {
-		if fi.Mode()&os.ModeSymlink == 0 {
-			return "", false
-		}
-		target, err := os.Readlink(p)
-		if err != nil {
-			return "", false
-		}
-		if !filepath.IsAbs(target) {
-			parent, ok := resolvePrefixThroughLinks(filepath.Dir(p), hops+1)
-			if !ok {
-				return "", false
-			}
-			target = filepath.Join(parent, target)
-		}
-		return resolvePrefixThroughLinks(filepath.Clean(target), hops+1)
+	if _, err := os.Lstat(p); err == nil {
+		return "", false
 	}
 	parent := filepath.Dir(p)
 	if parent == p {
 		return p, true
 	}
-	head, ok := resolvePrefixThroughLinks(parent, hops+1)
+	head, ok := resolveRootPrefix(parent)
 	if !ok {
 		return "", false
 	}
