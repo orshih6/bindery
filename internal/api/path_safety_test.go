@@ -472,8 +472,10 @@ func TestRemoveBookDirScoped_NilPredicate(t *testing.T) {
 
 // stubOwner lets the ownership guard be driven without a database.
 type stubOwner struct {
-	owned map[string]bool
-	err   error
+	owned    map[string]bool
+	err      error
+	underErr error // fails only PathUnderOtherBookDir
+	under    map[string]bool
 }
 
 func (s stubOwner) PathOwnedByOtherBook(_ context.Context, path string, _ int64) (bool, error) {
@@ -483,8 +485,38 @@ func (s stubOwner) PathOwnedByOtherBook(_ context.Context, path string, _ int64)
 	return s.owned[path], nil
 }
 
-func (s stubOwner) PathUnderOtherLiveBookDir(_ context.Context, _ string, _ int64) (bool, error) {
-	return false, s.err
+func (s stubOwner) PathUnderOtherBookDir(_ context.Context, path string, _ int64) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	if s.underErr != nil {
+		return false, s.underErr
+	}
+	return s.under[path], nil
+}
+
+// TestPathGuardedByOtherBook_AncestorLookupErrorPropagates: when only the
+// folder lookup fails, the guard must report the error, and both delete
+// sweeps must then leave the file alone (#3336).
+func TestPathGuardedByOtherBook_AncestorLookupErrorPropagates(t *testing.T) {
+	owner := stubOwner{underErr: os.ErrPermission}
+	if _, err := pathGuardedByOtherBook(context.Background(), owner, 1, "/x/y.mp3"); err == nil {
+		t.Fatal("ancestor lookup error was swallowed")
+	}
+	dir := filepath.Join(t.TempDir(), "Book")
+	m4b := mustWrite(t, filepath.Join(dir, "Book.m4b"))
+	if skipped, err := safeRemoveBookPath(context.Background(), nil, owner, 1, dir, "audiobook"); err != nil || !skipped {
+		t.Errorf("safeRemoveBookPath = %v, %v, want skipped", skipped, err)
+	}
+	if !exists(m4b) {
+		t.Error("file removed despite an unverifiable folder ownership check")
+	}
+	if skipped, err := safeRemoveBookPathExact(context.Background(), nil, owner, 1, m4b, "audiobook"); err != nil || !skipped {
+		t.Errorf("safeRemoveBookPathExact = %v, %v, want skipped", skipped, err)
+	}
+	if !exists(m4b) {
+		t.Error("file removed by the exact delete despite an unverifiable folder ownership check")
+	}
 }
 
 // TestSafeRemoveBookPath_OwnershipErrorFailsSafe covers the deliberate

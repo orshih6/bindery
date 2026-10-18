@@ -404,13 +404,13 @@ func safeRemoveBookPathExact(ctx context.Context, roots *LibraryRoots, owner boo
 // path column is globally UNIQUE, so any hit is a single unambiguous owner.
 type bookFileOwner interface {
 	PathOwnedByOtherBook(ctx context.Context, path string, excludeBookID int64) (bool, error)
-	// PathUnderOtherLiveBookDir reports whether a live book other than
+	// PathUnderOtherBookDir reports whether a book other than
 	// excludeBookID tracks a folder containing path (#3336).
-	PathUnderOtherLiveBookDir(ctx context.Context, path string, excludeBookID int64) (bool, error)
+	PathUnderOtherBookDir(ctx context.Context, path string, excludeBookID int64) (bool, error)
 }
 
 // pathGuardedByOtherBook is the single ownership predicate every delete sweep
-// uses: the path is another book's row, or sits under a folder another live
+// uses: the path is another book's row, or sits under a folder another
 // book tracks. A folder row owns what is below it even when no row names the
 // file exactly, so an exact-path check alone let a sweep through a box set's
 // folder take files from a nested book's folder (#3336).
@@ -418,5 +418,5 @@ func pathGuardedByOtherBook(ctx context.Context, owner bookFileOwner, excludeBoo
 	if owned, err := owner.PathOwnedByOtherBook(ctx, path, excludeBookID); err != nil || owned {
 		return owned, err
 	}
-	return owner.PathUnderOtherLiveBookDir(ctx, path, excludeBookID)
+	return owner.PathUnderOtherBookDir(ctx, path, excludeBookID)
 }

@@ -1056,11 +1056,11 @@ func (r *BookRepo) PathOwnedByOtherBook(ctx context.Context, path string, exclud
 	return r.files.PathOwnedByOtherBook(ctx, path, excludeBookID)
 }
 
-// PathUnderOtherLiveBookDir reports whether a live book other than
+// PathUnderOtherBookDir reports whether a book other than
 // excludeBookID tracks a folder that contains path. See
-// BookFileRepo.PathUnderOtherLiveBookDir (#3336).
-func (r *BookRepo) PathUnderOtherLiveBookDir(ctx context.Context, path string, excludeBookID int64) (bool, error) {
-	return r.files.PathUnderOtherLiveBookDir(ctx, path, excludeBookID)
+// BookFileRepo.PathUnderOtherBookDir (#3336).
+func (r *BookRepo) PathUnderOtherBookDir(ctx context.Context, path string, excludeBookID int64) (bool, error) {
+	return r.files.PathUnderOtherBookDir(ctx, path, excludeBookID)
 }
 
 // PathOwnedByLiveOtherBook is PathOwnedByOtherBook ignoring a row left by a
