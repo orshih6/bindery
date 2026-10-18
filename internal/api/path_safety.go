@@ -225,20 +225,51 @@ func resolveWithMissingTail(p string) (string, bool) {
 // A nil receiver opts out (returns the cleaned path, true), mirroring Contains
 // and preserving behaviour for callers/tests that have not wired roots.
 func (r *LibraryRoots) ResolveContained(ctx context.Context, p string) (string, bool) {
+	resolved, res := r.CheckContained(ctx, p)
+	return resolved, res == ContainOK
+}
+
+// ContainResult says why CheckContained accepted or refused a path.
+type ContainResult int
+
+const (
+	// ContainOK: the path resolved inside a configured root.
+	ContainOK ContainResult = iota
+	// ContainOutside: the path is not under any root, or it resolves outside
+	// every root (a symlink or ".." out). This is the only refusal that means
+	// "outside the library".
+	ContainOutside
+	// ContainUnreadable: the path is written inside a root but cannot be
+	// resolved (missing, renamed, unmounted, dangling link, permission
+	// denied), so containment could not be proven. It is refused exactly like
+	// ContainOutside; only the explanation differs.
+	ContainUnreadable
+)
+
+// CheckContained is ResolveContained with the reason for a refusal. The accept
+// decision is identical: ok if and only if ResolveContained would accept. The
+// extra detail only separates "outside the library" from "inside the library
+// on paper but unreadable", so callers can word the error truthfully.
+func (r *LibraryRoots) CheckContained(ctx context.Context, p string) (string, ContainResult) {
 	if r == nil {
-		return filepath.Clean(p), true
+		return filepath.Clean(p), ContainOK
 	}
 	p = strings.TrimSpace(p)
 	if p == "" || !filepath.IsAbs(p) {
-		return "", false
+		return "", ContainOutside
 	}
-	resolved, err := filepath.EvalSymlinks(filepath.Clean(p))
+	clean := filepath.Clean(p)
+	resolved, err := filepath.EvalSymlinks(clean)
 	if err != nil {
 		// Broken link, missing file, or permission denied: can't prove
 		// containment, so refuse. (Contains is lenient here for the delete
 		// path, where the input is a trusted DB row rather than a
 		// user-supplied path that might be a symlink out of the library.)
-		return "", false
+		// Whether it is written inside a root decides only the wording.
+		if r.lexicallyInRoot(ctx, clean) {
+			return "", ContainUnreadable
+		}
+		return "", ContainOutside
 	}
 	// Fail closed when no roots are configured: an admin-triggered file
 	// read/move outside any library is too dangerous to allow-all. (Contains
@@ -253,10 +284,40 @@ func (r *LibraryRoots) ResolveContained(ctx context.Context, p string) (string, 
 		// "scan everything under /books"), unlike the delete path where a root
 		// is never a deletable book. Allow root-equality here (#1373).
 		if containsUnderOrEqualRoot(resolved, realRoot) {
-			return resolved, true
+			return resolved, ContainOK
 		}
 	}
-	return "", false
+	return "", ContainOutside
+}
+
+// lexicallyInRoot reports whether the cleaned absolute path p is written under
+// (or equal to) a configured root, as typed or through symlinks on either side. It is used only to pick the wording of a refusal and
+// never to accept a path.
+func (r *LibraryRoots) lexicallyInRoot(ctx context.Context, p string) bool {
+	// Also try the path with its existing prefix resolved, so a missing file
+	// reached through a symlinked folder is judged by where that folder lands.
+	forms := []string{p}
+	if real, ok := resolveWithMissingTail(p); ok && real != p {
+		forms = append(forms, real)
+	}
+	for _, p := range forms {
+		if r.underAnyRoot(ctx, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *LibraryRoots) underAnyRoot(ctx context.Context, p string) bool {
+	for _, root := range r.resolveRoots(ctx) {
+		if containsUnderOrEqualRoot(p, root) {
+			return true
+		}
+		if rr, err := filepath.EvalSymlinks(root); err == nil && containsUnderOrEqualRoot(p, rr) {
+			return true
+		}
+	}
+	return false
 }
 
 // containsUnderOrEqualRoot is containsUnderRoot but also accepts p == root. Used
