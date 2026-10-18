@@ -64,11 +64,55 @@ func TestSiblingVolumeKeepsLegitimate(t *testing.T) {
 func TestSiblingVolumeKeepsPositionBehaviour(t *testing.T) {
 	bc := siblingCtx
 	bc.seriesPosition = "12"
-	if kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", "R L Stine - [Rotten School 12] - Battle of the Dum Diddys (retail) (epub)", bc); kept && reason != "" {
-		t.Errorf("unexpected reason %q", reason)
+	if kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", "R L Stine - [Rotten School 12] - Battle of the Dum Diddys (retail) (epub)", bc); !kept {
+		t.Errorf("position 12 release for volume 12 rejected: %s", reason)
+	}
+	// A duplicate catalogue row (a second edition) for the very volume that is
+	// wanted must not turn the wanted volume's own release into another title.
+	if kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", "Rotten School 12 - Battle of the Dum Diddys (epub)", bc); !kept {
+		t.Errorf("duplicate row with stored position rejected the good release: %s", reason)
 	}
 	bc.seriesPosition = "3"
 	if kept, _ := relevanceVerdict("Rotten School", "R. L. Stine", "R L Stine - Rotten School 4 (epub)", bc); kept {
 		t.Error("position 3 should still reject number 4")
+	}
+}
+
+// TestSiblingTailShape pins which library titles count as a numbered sibling.
+func TestSiblingTailShape(t *testing.T) {
+	wanted := []string{"rotten", "school"}
+	cases := []struct {
+		title string
+		num   int
+		tail  string
+		ok    bool
+	}{
+		{"Rotten School #12 - Battle of the Dum Diddys", 12, "battle of the dum diddys", true},
+		{"Rotten School Vol 2 - Gross Out Games", 2, "gross out games", true},
+		{"Rotten School Book 3 - Gross Out Games", 3, "gross out games", true},
+		{"Rotten School 2010 - Gross Out Games", 0, "", false},
+		{"Rotten School - Gross Out Games", 0, "", false},
+		{"Rotten School 1 - Gross Out Games", 0, "", false},
+		{"Return to Rotten School 5 - Gross Out Games", 0, "", false},
+	}
+	for _, c := range cases {
+		n, tail, ok := siblingTail(c.title, wanted)
+		if n != c.num || tail != c.tail || ok != c.ok {
+			t.Errorf("siblingTail(%q) = %d, %q, %v; want %d, %q, %v", c.title, n, tail, ok, c.num, c.tail, c.ok)
+		}
+	}
+	if _, _, ok := siblingTail("Rotten School 12 - Battle of the Dum Diddys", nil); ok {
+		t.Error("empty wanted identity must never match")
+	}
+}
+
+// TestSiblingLimitation documents the trade off: a numbered library row whose
+// tail is the only thing a plain release shares makes that release another
+// title.
+func TestSiblingLimitation(t *testing.T) {
+	bc := bookContext{otherTitles: []string{"Dune 2 - Illustrated Edition"}}
+	kept, reason := relevanceVerdict("Dune", "Frank Herbert", "Frank Herbert - Dune - Illustrated Edition (epub)", bc)
+	if kept || reason != reasonAnotherTitle {
+		t.Errorf("kept=%v reason=%q, want the known rejection", kept, reason)
 	}
 }

@@ -135,6 +135,11 @@ and three more:
   plain `Rotten School - Battle of the Dum Diddys`. Only a library title that
   starts with the wanted title and a number of 2 or more counts, so titles that
   end in a number, such as `Catch-22` or `Apollo 13`, are unaffected.
+  A stored series position switches this off, so a duplicate row never hides
+  the wanted volume's own release. Known trade-off: with a library title
+  `Dune 2 - Illustrated Edition` and no stored position, the plain `Dune -
+  Illustrated Edition (epub)` is dropped for the wanted `Dune`, because the
+  words after the number count as another title.
 
 The limit: with no series position, no library title that matches the main
 title, and no full title among the results, a lone `Legion (2012)` is still

@@ -321,7 +321,7 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 			continue
 		}
 		variants := []string{cleaned, primaryTitle(cleaned), newznab.SeriesPositionTitle(cleaned)}
-		if len(wanted) > 0 {
+		if !tr.posKnown && len(wanted) > 0 {
 			if n, tail, ok := siblingTail(cleaned, wanted[0]); ok {
 				tr.siblingNums[n] = true
 				variants = append(variants, tail)
