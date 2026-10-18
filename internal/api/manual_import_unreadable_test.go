@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -323,5 +324,58 @@ func TestManualImport_SymlinkLoopIsFastAndForbidden(t *testing.T) {
 	assertOutside(t, manualImportCalls(h, filepath.Join(root, "loopa")))
 	if d := time.Since(start); d > 100*time.Millisecond {
 		t.Errorf("four loop requests took %v, want well under 100ms", d)
+	}
+}
+
+// The wording check lists a parent directory only when that parent resolves
+// inside a configured root, so no directory outside the library is ever read.
+// Not parallel: it swaps the package level listing seam.
+func TestManualImport_WordingNeverListsOutsideTheRoots(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{root, outside, filepath.Join(outside, "sub")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "etc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "later"), filepath.Join(root, "danglingout")); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var listed []string
+	orig := readDirForWording
+	readDirForWording = func(name string) ([]os.DirEntry, error) {
+		mu.Lock()
+		listed = append(listed, name)
+		mu.Unlock()
+		return orig(name)
+	}
+	t.Cleanup(func() { readDirForWording = orig })
+	h := containmentHandler(root)
+
+	for _, p := range []string{
+		filepath.Join(outside, "nonexistent"),
+		filepath.Join(outside, "sub", "nope", "x"),
+		filepath.Join(root, "etc", "nonexistent"),
+		filepath.Join(root, "etc", "sub", "nope"),
+		filepath.Join(root, "danglingout"),
+	} {
+		manualImportCalls(h, p)
+	}
+	for _, d := range listed {
+		if !strings.HasPrefix(d, root) {
+			t.Errorf("listed %q, a directory outside the roots", d)
+		}
+	}
+
+	// Control: an in-root miss does list its parent, so the seam is live.
+	listed = nil
+	manualImportCalls(h, filepath.Join(root, "missing.mp3"))
+	if len(listed) == 0 {
+		t.Error("an in-root missing file never listed its parent; the seam is not exercised")
 	}
 }

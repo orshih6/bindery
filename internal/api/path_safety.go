@@ -298,7 +298,7 @@ func (r *LibraryRoots) CheckContained(ctx context.Context, p string) (string, Co
 // resolves outside, so it must be indistinguishable from any other outside
 // path, whether or not the file exists there.
 func (r *LibraryRoots) resolvesInRoot(ctx context.Context, p string) bool {
-	real, ok := resolveRootPrefix(p)
+	real, ok := r.resolveRootPrefix(ctx, p)
 	return ok && r.underAnyRoot(ctx, real)
 }
 
@@ -310,7 +310,7 @@ func (r *LibraryRoots) resolvesInRoot(ctx context.Context, p string) bool {
 // kernel resolves the component before it, so string arithmetic would put the
 // file somewhere else. Such a path is refused as outside, the same answer
 // every other undecidable path gets.
-func resolveRootPrefix(p string) (string, bool) {
+func (r *LibraryRoots) resolveRootPrefix(ctx context.Context, p string) (string, bool) {
 	if real, err := filepath.EvalSymlinks(p); err == nil {
 		return real, true
 	}
@@ -321,7 +321,7 @@ func resolveRootPrefix(p string) (string, bool) {
 	base := filepath.Base(p)
 	head, err := filepath.EvalSymlinks(parent)
 	if err != nil {
-		head, ok := resolveRootPrefix(parent)
+		head, ok := r.resolveRootPrefix(ctx, parent)
 		if !ok {
 			return "", false
 		}
@@ -332,7 +332,14 @@ func resolveRootPrefix(p string) (string, bool) {
 	// filesystem call. A name that is listed yet did not resolve is a dangling
 	// link or a loop. An unreadable parent lists nothing, so its children count
 	// as missing, as they would for any caller that cannot see them.
-	if entries, err := os.ReadDir(head); err == nil {
+	//
+	// Only a parent that resolves inside a configured root is listed. Anywhere
+	// else the answer is "outside" whatever the listing would say, so a
+	// directory outside the library is never read at all.
+	if !r.underAnyRoot(ctx, head) {
+		return filepath.Join(head, base), true
+	}
+	if entries, err := readDirForWording(head); err == nil {
 		for _, e := range entries {
 			if e.Name() == base {
 				return "", false
@@ -341,6 +348,10 @@ func resolveRootPrefix(p string) (string, bool) {
 	}
 	return filepath.Join(head, base), true
 }
+
+// readDirForWording is os.ReadDir behind a seam so a test can prove which
+// directories the wording check reads.
+var readDirForWording = os.ReadDir
 
 func (r *LibraryRoots) underAnyRoot(ctx context.Context, p string) bool {
 	for _, root := range r.resolveRoots(ctx) {
