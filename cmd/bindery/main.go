@@ -1191,6 +1191,10 @@ func main() {
 		// Storage paths, admin-only (see registerStorageRoutes).
 		registerStorageRoutes(r, api.NewStorageHandler(cfg))
 
+		// Foreign key drift report, admin-only and on demand (see
+		// registerDBIntegrityRoutes).
+		registerDBIntegrityRoutes(r, api.NewDBIntegrityHandler(database))
+
 		// Library. The scan status returns server filesystem paths, so it is
 		// admin only (#2361); see registerLibraryScanStatusRoute.
 		r.Post("/library/scan", libraryHandler.Scan)

@@ -36,6 +36,7 @@ export const HEADINGS: HeadingEntry[] = [
   { tab: 'general', key: 'settings.general.fileNaming', adminOnly: true },
   { tab: 'general', key: 'settings.general.downloads', adminOnly: true },
   { tab: 'general', key: 'settings.general.storage', adminOnly: true },
+  { tab: 'general', key: 'settings.general.dbCheck', adminOnly: true },
   { tab: 'general', key: 'settings.general.library', adminOnly: true },
   { tab: 'general', key: 'settings.general.search', adminOnly: true },
   { tab: 'general', key: 'settings.general.hardcoverSync', fallback: 'Hardcover list sync', adminOnly: true },

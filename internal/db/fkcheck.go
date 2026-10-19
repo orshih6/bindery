@@ -318,3 +318,54 @@ func RepairForeignKeyViolations(ctx context.Context, database *sql.DB, violation
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
+
+// ForeignKeyDrift is one relationship (child table to parent table) that has
+// rows pointing at a parent which no longer exists. It carries counts only: no
+// row ids and no row contents, so it is safe to hand to the Settings UI.
+type ForeignKeyDrift struct {
+	ChildTable  string
+	ParentTable string
+	// OnDelete is what the schema declares should have happened to the child
+	// row when its parent was deleted: CASCADE, SET NULL, NO ACTION, ... It is
+	// what a cleanup would replay. Empty when the schema has no matching
+	// foreign key entry.
+	OnDelete   string
+	Violations int
+}
+
+// ForeignKeyDriftReport runs `pragma_foreign_key_check` once and groups the
+// result by child table AND parent table, joined to `pragma_foreign_key_list`
+// for the declared ON DELETE action. Read only: it never writes.
+//
+// It is a full scan of every table that has a foreign key, so callers must run
+// it on demand only, with a context that can cancel it. The result set is
+// fully read and closed before returning, so the pool's single connection is
+// held for the scan and not a moment longer; no transaction is opened.
+//
+// seq = 0 keeps a composite key from being counted once per column.
+func ForeignKeyDriftReport(ctx context.Context, database *sql.DB) ([]ForeignKeyDrift, error) {
+	rows, err := database.QueryContext(ctx, `
+SELECT c."table", c."parent", COALESCE(l."on_delete", ''), COUNT(*)
+FROM pragma_foreign_key_check AS c
+LEFT JOIN pragma_foreign_key_list(c."table") AS l ON l."id" = c."fkid" AND l."seq" = 0
+GROUP BY c."table", c."parent", c."fkid"
+ORDER BY c."table", c."parent"`)
+	if err != nil {
+		return nil, fmt.Errorf("foreign_key_check: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ForeignKeyDrift{}
+	for rows.Next() {
+		var d ForeignKeyDrift
+		if err := rows.Scan(&d.ChildTable, &d.ParentTable, &d.OnDelete, &d.Violations); err != nil {
+			return nil, fmt.Errorf("scan foreign_key_check row: %w", err)
+		}
+		d.OnDelete = strings.ToUpper(d.OnDelete)
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate foreign_key_check: %w", err)
+	}
+	return out, nil
+}

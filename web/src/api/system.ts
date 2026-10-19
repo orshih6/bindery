@@ -65,6 +65,23 @@ export interface StorageHealth {
   hardlinkReason?: string
 }
 
+/** One relationship (child table to parent table) with rows whose parent no
+ *  longer exists. Counts only: the endpoint never returns row ids or contents. */
+export interface DBIntegrityRelationship {
+  childTable: string
+  parentTable: string
+  /** Declared ON DELETE action: CASCADE, SET NULL, NO ACTION, ... ('' if unknown). */
+  onDelete: string
+  violations: number
+}
+
+/** Result of POST /system/db-integrity (#3356). */
+export interface DBIntegrityReport {
+  relationships: DBIntegrityRelationship[]
+  total: number
+  checkedAt: string
+}
+
 export interface LogQuery {
   level?: string
   component?: string
@@ -104,4 +121,7 @@ export const systemApi = {
   setLogLevel: (level: string) =>
     request<{ level: string }>('/system/loglevel', { method: 'PUT', body: JSON.stringify({ level }) }),
   getStorage: () => request<StorageHealth>('/system/storage'),
+  /** Read only foreign key drift scan. Admin only, a full database pass, so
+   *  call it from a button and never on load. */
+  checkDBIntegrity: () => request<DBIntegrityReport>('/system/db-integrity', { method: 'POST' }),
 }

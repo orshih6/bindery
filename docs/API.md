@@ -983,8 +983,33 @@ GET    /api/v1/system/logs                        app log lines (admin)
 GET    /api/v1/system/logs/export                 the same rows as a downloadable file (admin)
 GET    /api/v1/system/loglevel                    current log level (admin)
 PUT    /api/v1/system/loglevel                    runtime log-level switch, debug/info/warn/error (admin)
+POST   /api/v1/system/db-integrity                on demand foreign key drift check, read only (admin)
 GET    /api/v1/images?url=<encoded>               proxied + cached cover image (30-day TTL)
 ```
+
+`POST /api/v1/system/db-integrity` runs `PRAGMA foreign_key_check` over the
+whole database and groups what it finds by relationship (#3356). It is a full
+scan, so it is a POST (a prefetcher or crawler cannot start one) and it only
+ever runs when asked: never at boot, never on a timer. It reads and never
+writes, and it returns counts only, no row ids and no row contents:
+
+```json
+{
+  "relationships": [
+    {"childTable": "book_files", "parentTable": "books", "onDelete": "CASCADE", "violations": 4}
+  ],
+  "total": 4,
+  "checkedAt": "2026-10-18T12:00:00Z"
+}
+```
+
+`onDelete` is the action the schema declares for that relationship (`CASCADE`,
+`SET NULL`, `NO ACTION`, ...), which is what a cleanup would replay. A clean
+database answers `relationships: []` and `total: 0`. Only one check runs at a
+time: a second request while one is running gets `409`. A scan is stopped after
+60 seconds with `504`, and a client that disconnects stops it too. Admin only,
+like `/system/storage`. The cleanup is still the `bindery db-repair` command
+(see [DEPLOYMENT.md](DEPLOYMENT.md#database-foreign-key-integrity)).
 
 `POST /api/v1/library/scan` answers `202` with `{"message": "library scan
 started"}` when it starts a scan. While a scan is already running it no longer

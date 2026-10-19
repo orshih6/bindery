@@ -226,6 +226,20 @@ func registerStorageRoutes(r chi.Router, h storageRouteHandler) {
 	})
 }
 
+type dbIntegrityRouteHandler interface {
+	Check(http.ResponseWriter, *http.Request)
+}
+
+// registerDBIntegrityRoutes mounts the on demand foreign key drift report
+// (#3356). Admin-only: it is a full database scan and names the schema's
+// tables. A POST, not a GET, so a prefetcher or crawler cannot start a scan.
+func registerDBIntegrityRoutes(r chi.Router, h dbIntegrityRouteHandler) {
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAdmin)
+		r.Post("/system/db-integrity", h.Check)
+	})
+}
+
 // adoptionRouteHandler is the surface registerAdoptionRoutes needs.
 type adoptionRouteHandler interface {
 	List(http.ResponseWriter, *http.Request)

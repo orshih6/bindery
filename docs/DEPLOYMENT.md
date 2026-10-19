@@ -655,6 +655,8 @@ docker run --rm -v bindery-config:/config ghcr.io/vavallee/bindery:latest db-rep
 
 If your platform doesn't let you change the container command (some NAS app UIs), set `BINDERY_DB_FK_CHECK=report` or `BINDERY_DB_FK_CHECK=repair` instead, start the container once, read the log, then unset the variable.
 
+**Checking from the web UI.** Settings, General has a "Check database" button (admin only) that counts the orphan rows per relationship and shows what the schema says should have happened to them. It is read only and runs only when you press it, because it reads the whole database. The fix is still `db-repair` from the command line; there is no cleanup button yet.
+
 `db-repair` is not a blanket delete. Each orphan row is resolved the way the schema says it should have been when its parent disappeared: `ON DELETE CASCADE` rows are removed, `ON DELETE SET NULL` references are cleared (so download history survives with an empty book reference), and anything the schema doesn't cover is left alone and reported. **Take a backup first** — `db-repair` refuses to run without `--yes` for that reason.
 
 Where the orphans come from: before [#1727](https://github.com/vavallee/bindery/issues/1727), foreign key enforcement could silently switch off on a replacement pooled connection, so declared cascades stopped firing. Long-running instances accumulated orphan rows. They are harmless to normal operation — Bindery starts and runs fine with them — and this tooling exists to clean them up on your schedule. See [Troubleshooting](Troubleshooting-Wiki.md#bindery-will-not-start-after-upgrading-foreign_key_check-found-n-violations).
