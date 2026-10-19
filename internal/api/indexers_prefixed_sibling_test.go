@@ -13,7 +13,9 @@ import (
 	"github.com/vavallee/bindery/internal/models"
 )
 
-// #3382: interactive search hands the relevance filter the author's NON
+// Call path pin for #3382. This test passes without the fix too: it pins the
+// input the new rule depends on, and the rule itself is tested in
+// internal/indexer. Interactive search hands the relevance filter the author's NON
 // excluded titles. The imported, series prefixed sibling is among them, which
 // is what lets the filter read its suffix as another book; the excluded
 // standalone duplicate is not, and need not be.

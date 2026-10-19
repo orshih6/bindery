@@ -226,7 +226,12 @@ func isSetTitle(title string) bool {
 
 type otherTitle struct {
 	ident []string
-	words []string // ASCII identity words, for a cheap pre-check
+	// prefixed marks the suffix of an unnumbered, series prefixed library
+	// title (#3382). A release that carries it straight after the wanted
+	// title is that library title's own name, the same book written with its
+	// subtitle, and is not another book.
+	prefixed bool
+	words    []string // ASCII identity words, for a cheap pre-check
 }
 
 // trailingRules holds the per search state of the trailing title rules.
@@ -278,15 +283,74 @@ func siblingTail(cleaned string, wanted []string) (num int, tail string, ok bool
 }
 
 // editionWords are words that describe a printing and not a book. A suffix made
-// only of them ("Deluxe Illustrated Edition") names an edition of the wanted
-// book, so it is never read as another title.
+// only of them ("Large Print", "A Novel") names an edition of the wanted book.
 var editionWords = map[string]bool{
-	"edition": true, "editions": true, "illustrated": true, "annotated": true, "unabridged": true,
-	"abridged": true, "revised": true, "expanded": true, "anniversary": true, "deluxe": true,
-	"special": true, "collectors": true, "limited": true, "updated": true, "original": true,
-	"classic": true, "novel": true, "audiobook": true, "ebook": true, "paperback": true,
-	"hardcover": true, "large": true, "print": true, "reissue": true, "movie": true, "film": true,
-	"tie": true, "new": true, "complete": true, "second": true, "third": true, "first": true,
+	"illustrated": true, "annotated": true, "unabridged": true, "abridged": true,
+	"revised": true, "expanded": true, "anniversary": true, "deluxe": true,
+	"special": true, "collectors": true, "limited": true, "updated": true,
+	"original": true, "classic": true, "novel": true, "novella": true, "audiobook": true,
+	"ebook": true, "paperback": true, "hardcover": true, "large": true, "print": true,
+	"reissue": true, "movie": true, "film": true, "tie": true, "new": true,
+	"complete": true, "language": true,
+}
+
+// editionForms are the words for "edition" in the languages catalogues use.
+// A suffix that starts or ends with one ("German Edition", "Edicion en
+// Espanol", "Deutsche Ausgabe", "Norsk utgave") describes an edition.
+var editionForms = map[string]bool{
+	"edition": true, "editions": true, "edicion": true, "edizione": true, "ausgabe": true,
+	"utgave": true, "udgave": true, "utgava": true, "upplaga": true, "editie": true,
+	"edycja": true, "painos": true, "edisjon": true, "editora": true,
+}
+
+// editionLanguages are language names that start an edition suffix
+// ("German Edition of ...", "Deutsche Ausgabe", "Espanol").
+var editionLanguages = map[string]bool{
+	"english": true, "german": true, "deutsche": true, "deutsch": true, "french": true,
+	"francais": true, "spanish": true, "espanol": true, "italian": true, "italiano": true,
+	"portuguese": true, "dutch": true, "nederlandse": true, "swedish": true, "svenska": true,
+	"norwegian": true, "norsk": true, "danish": true, "dansk": true, "finnish": true,
+	"polish": true, "russian": true, "japanese": true, "chinese": true, "korean": true,
+}
+
+// ordinalWords are the ordinals as words that start an anniversary or edition
+// suffix ("Tenth Anniversary Edition").
+var ordinalWords = map[string]bool{
+	"first": true, "second": true, "third": true, "fourth": true, "fifth": true, "sixth": true,
+	"seventh": true, "eighth": true, "ninth": true, "tenth": true, "eleventh": true,
+	"twelfth": true, "fifteenth": true, "twentieth": true, "twenty": true, "thirtieth": true,
+	"fortieth": true, "fiftieth": true, "hundredth": true,
+}
+
+var ordinalDigitsRe = regexp.MustCompile(`^\d+(?:st|nd|rd|th)$`)
+
+// isEditionSuffix reports whether the normalised suffix words describe an
+// edition of the wanted book and not another book. The test is structural: the
+// suffix starts or ends with a word for "edition", starts with an ordinal or a
+// language name, mentions an anniversary, or is made only of edition words.
+func isEditionSuffix(raw []string) bool {
+	words := make([]string, len(raw))
+	for i, w := range raw {
+		words[i] = stripMarks(w)
+	}
+	if len(words) == 0 {
+		return false
+	}
+	first, last := words[0], words[len(words)-1]
+	if editionForms[first] || editionForms[last] || editionLanguages[first] ||
+		ordinalWords[first] || ordinalDigitsRe.MatchString(first) {
+		return true
+	}
+	allEdition := true
+	for _, w := range words {
+		if w == "anniversary" {
+			return true
+		}
+		if !editionWords[w] && len(newznab.SigWords(w)) != 0 {
+			allEdition = false
+		}
+	}
+	return allEdition
 }
 
 // prefixedSuffix reads a library title that is the wanted title, a punctuation
@@ -318,18 +382,10 @@ func prefixedSuffix(cleaned string, wanted []string) (tail string, ok bool) {
 	for _, t := range toks[k:] {
 		words = append(words, t.text)
 	}
-	tail = strings.Join(words, " ")
-	ident := titleIdentityKeywords(tail)
-	editionOnly := len(ident) > 0
-	for _, w := range ident {
-		if !editionWords[w] {
-			editionOnly = false
-			break
-		}
-	}
-	if editionOnly {
+	if isEditionSuffix(words) {
 		return "", false
 	}
+	tail = strings.Join(words, " ")
 	return tail, true
 }
 
@@ -371,12 +427,14 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 	}
 	wantedNorm := NormalizeRelease(title)
 	seen := map[string]bool{}
+	othersAt := map[string]int{}
 	for _, raw := range bc.otherTitles {
 		cleaned := newznab.StripFormatQualifiers(newznab.NormalizeQueryTitle(raw))
 		if isSetTitle(cleaned) {
 			continue
 		}
 		variants := []string{cleaned, primaryTitle(cleaned), newznab.SeriesPositionTitle(cleaned)}
+		prefixedTail := ""
 		if !tr.posKnown && len(wanted) > 0 {
 			if n, tail, ok := siblingTail(cleaned, wanted[0]); ok {
 				tr.siblingNums[n] = true
@@ -386,6 +444,7 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 				// another book's name, whether or not the standalone row of
 				// that book is excluded from the listing.
 				variants = append(variants, tail)
+				prefixedTail = tail
 			}
 		}
 		for _, v := range variants {
@@ -394,7 +453,13 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 				continue
 			}
 			key := strings.Join(ident, " ")
+			isPrefixed := prefixedTail != "" && v == prefixedTail
 			if seen[key] {
+				// The same title also stands as a book of its own: it is
+				// then not only a subtitle.
+				if i, ok := othersAt[key]; ok && !isPrefixed {
+					tr.others[i].prefixed = false
+				}
 				continue
 			}
 			seen[key] = true
@@ -412,12 +477,13 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 			if contained {
 				continue
 			}
-			ot := otherTitle{ident: ident}
+			ot := otherTitle{ident: ident, prefixed: isPrefixed}
 			for _, w := range ident {
 				if isASCII(w) && !isAllDigits(w) && !newznab.IsVolumeMarker(w) {
 					ot.words = append(ot.words, w)
 				}
 			}
+			othersAt[key] = len(tr.others)
 			tr.others = append(tr.others, ot)
 		}
 	}
@@ -709,12 +775,40 @@ func (tr *trailingRules) otherTitleIn(rest []relTok) string {
 		for _, loc := range phraseRegex(ot.ident).FindAllStringIndex(haystack, -1) {
 			start := len(strings.Fields(haystack[:loc[0]]))
 			end := len(strings.Fields(haystack[:loc[1]]))
+			if ot.prefixed && startsRightAfterTitle(rest, start) {
+				continue
+			}
 			if !seriesLabel(rest, start, end) {
 				return reasonAnotherTitle
 			}
 		}
 	}
 	return ""
+}
+
+// stripMarks removes combining accents ("edición" becomes "edicion") so the
+// edition words match whatever diacritics a catalogue wrote.
+func stripMarks(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) {
+			return -1
+		}
+		return r
+	}, norm.NFD.String(s))
+}
+
+// startsRightAfterTitle reports whether nothing but connecting words (an
+// article, "or", "and") sits between the wanted title and rest[start:]. The
+// release then reads wanted title plus suffix, the library sibling's own full
+// title (#3382). A number or any significant word in between
+// ("[Rotten School 11] - Punk'd and Skunked") means a different book.
+func startsRightAfterTitle(rest []relTok, start int) bool {
+	for _, t := range rest[:start] {
+		if isAllDigits(t.text) || len(newznab.SigWords(t.text)) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // seriesWords are the words after a series name that say it is a series.

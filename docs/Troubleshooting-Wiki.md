@@ -149,9 +149,22 @@ and three more:
   Skunked` row does not help), `R L Stine - [Rotten School 11] - Punk'd and
   Skunked (epub)` is dropped for the wanted `Rotten School` (`release names
   another title after this one`), whichever way the apostrophe is spelled.
-  The prefix must be followed by a dash, colon or bracket, and a suffix made
-  only of edition words (`Deluxe Illustrated Edition`) is not read as a book.
-  Searching for `Punk'd and Skunked` itself still finds these releases. Known trade-off: with a library title
+  The prefix must be followed by a dash, colon or bracket. A suffix that
+  describes an edition is not read as a book: one that starts or ends with a
+  word for edition (`German Edition`, `Edicion en Espanol`, `Deutsche Ausgabe`,
+  `Norsk utgave`), starts with an ordinal or a language name (`10th Anniversary
+  Edition`, `Second Printing`), mentions an anniversary, or is made only of
+  words such as `Large Print`, `Movie Tie-in` and `A Novel`. A library title
+  that is the same book written with its subtitle (`Sapiens: A Brief History
+  of Humankind` next to `Sapiens`, a duplicate from another provider) never
+  rejects the release that carries the whole title straight after the wanted
+  one, in any punctuation (`Sapiens - A Brief History of Humankind`); anything
+  in between, such as a volume number, still counts as another book. If the
+  library also holds the subtitle as a book of its own, that book still
+  counts. Searching for `Punk'd and Skunked` itself still finds these
+  releases.
+
+  Known trade-off: with a library title
   `Dune 2 - Illustrated Edition` and no stored position, the plain `Dune -
   Illustrated Edition (epub)` is dropped for the wanted `Dune`, because the
   words after the number count as another title.

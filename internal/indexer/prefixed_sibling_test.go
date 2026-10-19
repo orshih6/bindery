@@ -44,8 +44,8 @@ func TestPrefixedSiblingTitleRejected(t *testing.T) {
 	for _, release := range []string{
 		"R L Stine - [Rotten School 11] - Punk'd and Skunked (retail) (epub)",
 		"R L Stine - [Rotten School 11] - Punkd and Skunked (retail) (epub)",
-		"R L Stine - Rotten School - Punk'd and Skunked (epub)",
-		"R.L.Stine.Rotten.School.Punkd.and.Skunked.RETAIL.EPUB-GRP",
+		"R.L.Stine.Rotten.School.11.Punkd.and.Skunked.RETAIL.EPUB-GRP",
+		"R L Stine - Rotten School #11 - Punk'd and Skunked (epub)",
 	} {
 		kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", release, crit.context())
 		if kept || reason != reasonAnotherTitle {
@@ -108,8 +108,8 @@ func TestPrefixedSiblingTitleGuards(t *testing.T) {
 		{"omnibus sibling", "Rotten School", "R L Stine - Rotten School - Gross Out Games (epub)", []string{"Rotten School - Boxed Set Gross Out Games"}, bookContext{}, true},
 		{"edition suffix", "Dune", "Frank Herbert - Dune - Deluxe Illustrated Edition (epub)", []string{"Dune - Deluxe Illustrated Edition"}, bookContext{}, true},
 		{"no separator", "Rotten School", "R L Stine - Rotten School Punkd and Skunked (epub)", []string{"Rotten School Punkd and Skunked"}, bookContext{}, true},
-		{"number after the separator is not a title", "Rotten School", "R L Stine - Rotten School 2010 - Gross Out Games (epub)", []string{"Rotten School - 2010 Gross Out Games"}, bookContext{}, true},
-		{"marker word after the separator is not a title", "Rotten School", "R L Stine - Rotten School - Book Club Adventures (epub)", []string{"Rotten School - Book Club Adventures"}, bookContext{}, true},
+		{"number after the separator is not a title", "Rotten School", "R L Stine - [Rotten School 3] - 2010 Gross Out Games (epub)", []string{"Rotten School - 2010 Gross Out Games"}, bookContext{}, true},
+		{"marker word after the separator is not a title", "Rotten School", "R L Stine - [Rotten School 3] - Book Club Adventures (epub)", []string{"Rotten School - Book Club Adventures"}, bookContext{}, true},
 		{"stored position switches it off", "Rotten School", "R L Stine - [Rotten School 11] - Punkd and Skunked (epub)", []string{"Rotten School - Punk'd and skunked"}, bookContext{seriesPosition: "11"}, true},
 		{"rejects when none of the guards apply", "Rotten School", "R L Stine - [Rotten School 11] - Punkd and Skunked (epub)", []string{"Rotten School - Punk'd and skunked"}, bookContext{}, false},
 	}
