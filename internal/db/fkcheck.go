@@ -333,27 +333,74 @@ type ForeignKeyDrift struct {
 	Violations int
 }
 
-// ForeignKeyDriftReport runs `pragma_foreign_key_check` once and groups the
-// result by child table AND parent table, joined to `pragma_foreign_key_list`
-// for the declared ON DELETE action. Read only: it never writes.
-//
-// It is a full scan of every table that has a foreign key, so callers must run
-// it on demand only, with a context that can cancel it. The result set is
-// fully read and closed before returning, so the pool's single connection is
-// held for the scan and not a moment longer; no transaction is opened.
-//
-// seq = 0 keeps a composite key from being counted once per column.
-func ForeignKeyDriftReport(ctx context.Context, database *sql.DB) ([]ForeignKeyDrift, error) {
-	rows, err := database.QueryContext(ctx, `
+// driftQuery groups `pragma_foreign_key_check` by child table AND parent
+// table, joined to `pragma_foreign_key_list` for the declared ON DELETE
+// action. seq = 0 keeps a composite key from being counted once per column.
+const driftQuery = `
 SELECT c."table", c."parent", COALESCE(l."on_delete", ''), COUNT(*)
 FROM pragma_foreign_key_check AS c
 LEFT JOIN pragma_foreign_key_list(c."table") AS l ON l."id" = c."fkid" AND l."seq" = 0
 GROUP BY c."table", c."parent", c."fkid"
-ORDER BY c."table", c."parent"`)
+ORDER BY c."table", c."parent"`
+
+// driftQueryer is the one method the scan needs, satisfied by *sql.DB.
+type driftQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// ForeignKeyDriftReport runs the drift scan on the given pool. Read only: it
+// never writes.
+//
+// The scan is a full pass over every table with a foreign key, so callers must
+// run it on demand only, with a context that can cancel it. No transaction is
+// opened. NOTE: on the application's pool this holds the pool's ONLY
+// connection (SetMaxOpenConns(1)) for the whole scan, stalling every other
+// query including the auth middleware's settings reads. Production callers use
+// ForeignKeyDriftReportAt instead; this form exists for tests and for the
+// no-path fallback (in-memory databases cannot be reopened from a path).
+//
+// hook, when given, runs while the scan's statement is open. Tests use it to
+// hold a scan in flight.
+func ForeignKeyDriftReport(ctx context.Context, database *sql.DB, hook ...func()) ([]ForeignKeyDrift, error) {
+	return runDriftScan(ctx, database, hook)
+}
+
+// ForeignKeyDriftReportAt runs the same scan on its OWN short lived read only
+// connection to the database file at path, so it never takes the shared pool's
+// single connection and the rest of the app (health checks, auth, the UI)
+// keeps answering for the duration of the scan.
+//
+// The connection is opened per scan and closed before returning. It is
+// mode=ro, so it cannot write, and it deliberately sets no foreign_keys
+// pragma: foreign_key_check works regardless of enforcement and nothing here
+// toggles it. busy_timeout matches the other read-only opener (restore.go).
+//
+// WAL: a long read on a separate connection pins a WAL snapshot, so the WAL
+// cannot be checkpointed past it until the scan ends. That is bounded by the
+// caller's context deadline (the API uses 60 seconds), and the context is
+// honoured on this connection too, so a cancel or timeout interrupts the scan.
+func ForeignKeyDriftReportAt(ctx context.Context, path string, hook ...func()) ([]ForeignKeyDrift, error) {
+	ro, err := sql.Open("sqlite", SQLiteFileURI(path, "mode=ro&_pragma=busy_timeout(5000)"))
+	if err != nil {
+		return nil, fmt.Errorf("open %q read-only: %w", path, err)
+	}
+	defer func() { _ = ro.Close() }()
+	ro.SetMaxOpenConns(1)
+	return runDriftScan(ctx, ro, hook)
+}
+
+func runDriftScan(ctx context.Context, q driftQueryer, hook []func()) ([]ForeignKeyDrift, error) {
+	rows, err := q.QueryContext(ctx, driftQuery)
 	if err != nil {
 		return nil, fmt.Errorf("foreign_key_check: %w", err)
 	}
 	defer rows.Close()
+
+	for _, h := range hook {
+		if h != nil {
+			h()
+		}
+	}
 
 	out := []ForeignKeyDrift{}
 	for rows.Next() {

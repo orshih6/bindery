@@ -76,9 +76,15 @@ export default function DatabaseCheckSection() {
                 </tr>
               </thead>
               <tbody className="text-slate-800 dark:text-zinc-200">
-                {report.relationships.map(r => (
-                  <tr key={`${r.childTable}->${r.parentTable}`} className="border-t border-slate-200 dark:border-zinc-800">
-                    <td className="py-1 pr-3 font-mono">{r.childTable} {'->'} {r.parentTable}</td>
+                {report.relationships.map((r, i) => (
+                  // One child table can hold two foreign keys to the same parent
+                  // (requests to users: owner CASCADE, decider SET NULL), so the
+                  // on delete action is part of both the key and the label.
+                  <tr key={`${r.childTable}->${r.parentTable}->${r.onDelete}#${i}`} className="border-t border-slate-200 dark:border-zinc-800">
+                    <td className="py-1 pr-3 font-mono">
+                      {r.childTable} {'->'} {r.parentTable}
+                      {r.onDelete && <span className="text-slate-500 dark:text-zinc-500"> ({r.onDelete})</span>}
+                    </td>
                     <td className="py-1 pr-3 font-mono">{r.violations}</td>
                     <td className="py-1">{onDeleteLabel(r.onDelete)}</td>
                   </tr>

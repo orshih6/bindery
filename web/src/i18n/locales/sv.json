@@ -1313,7 +1313,7 @@
       "dbCheckCheckedAt": "Kontrollerad {{time}}",
       "dbCheckFailed": "Kontrollen misslyckades: {{message}}",
       "dbCheckFailedGeneric": "Det gick inte att köra kontrollen.",
-      "dbCheckRepairNote": "Det finns ingen rensningsknapp ännu. För att rätta avvikelser kör du bindery db-repair från kommandoraden: den listar först vad den hittade och ändrar inget förrän du ger den ja-flaggan. Säkerhetskopiera databasen först.",
+      "dbCheckRepairNote": "Det finns ingen rensningsknapp ännu. Från kommandoraden kan du förhandsgranska de berörda raderna med bindery db-check och rätta dem med bindery db-repair och ja-flaggan. db-repair vägrar köra utan ja-flaggan, så säkerhetskopiera databasen först.",
       "dbCheckDocsLink": "Så fungerar db-repair",
       "importModeHardlinkWarning": "⚠ Hårdlänk är valt, men den här konfigurationen kan inte skapa hårdlänkar, så importer kopieras i stället (långsammare och tar dubbelt så mycket diskutrymme). Lägg nedladdningsmappen och biblioteket på samma filsystem eller volym, eller byt till Automatiskt.",
       "storageHardlinkOk": "Nedladdningar och bibliotek delar filsystem, så färdiga nedladdningar hårdlänkas in i biblioteket (direkt och utan extra diskutrymme).",

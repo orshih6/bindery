@@ -83,6 +83,28 @@ describe('DatabaseCheckSection', () => {
     expect((screen.getByRole('button', { name: 'settings.general.dbCheckButton' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
+  it('tells apart two foreign keys from one child table to the same parent', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(api.checkDBIntegrity).mockResolvedValue({
+      total: 3,
+      checkedAt: '2026-10-18T12:00:00Z',
+      relationships: [
+        { childTable: 'requests', parentTable: 'users', onDelete: 'CASCADE', violations: 2 },
+        { childTable: 'requests', parentTable: 'users', onDelete: 'SET NULL', violations: 1 },
+      ],
+    })
+    render(<DatabaseCheckSection />)
+    fireEvent.click(screen.getByRole('button', { name: 'settings.general.dbCheckButton' }))
+    await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('(CASCADE)')
+    expect(rows[1].textContent).toContain('(SET NULL)')
+    // No duplicate React key warning.
+    expect(errSpy.mock.calls.some(c => String(c[0]).includes('same key'))).toBe(false)
+    errSpy.mockRestore()
+  })
+
   it('shows the clean state when nothing drifted', async () => {
     vi.mocked(api.checkDBIntegrity).mockResolvedValue({ total: 0, relationships: [], checkedAt: '2026-10-18T12:00:00Z' })
     render(<DatabaseCheckSection />)

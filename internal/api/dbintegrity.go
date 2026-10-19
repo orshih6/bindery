@@ -19,28 +19,45 @@ const dbIntegrityTimeout = 60 * time.Second
 
 // DBIntegrityHandler serves the read only foreign key drift report (#3356,
 // part 1 of #1973). It never writes: the cleanup is `bindery db-repair`.
+//
+// The scan runs on its own read only connection opened from the database file
+// (db.ForeignKeyDriftReportAt), not on the shared pool. The pool has ONE
+// connection, so a scan on it would stall every other request for the whole
+// scan, including /health and the auth middleware's settings reads. That also
+// defeated the single flight guard: a second POST sat in the auth middleware
+// until the first scan finished and then ran a second full scan.
 type DBIntegrityHandler struct {
-	// scan is db.ForeignKeyDriftReport in production; tests swap it to hold
-	// a scan open or to make it slow.
+	// scan is set by the constructor; tests swap it to hold a scan open or to
+	// make it slow.
 	scan    func(ctx context.Context) ([]db.ForeignKeyDrift, error)
 	timeout time.Duration
 	// running is taken with TryLock, never Lock: a second click while a scan
-	// is in flight is refused rather than queued behind it, because the pool
-	// has one connection and a queued scan would sit on it for another full
-	// pass.
+	// is in flight is refused with 409 rather than queued behind it. Because
+	// the scan no longer holds the app's connection, the second request now
+	// reaches this guard while the first is still running.
 	running sync.Mutex
 	now     func() time.Time
+	hook    func()
 }
 
-func NewDBIntegrityHandler(database *sql.DB) *DBIntegrityHandler {
-	return &DBIntegrityHandler{
-		scan: func(ctx context.Context) ([]db.ForeignKeyDrift, error) {
-			return db.ForeignKeyDriftReport(ctx, database)
-		},
-		timeout: dbIntegrityTimeout,
-		now:     time.Now,
+// NewDBIntegrityHandler builds the handler. dbPath is the database file; with
+// an empty path (tests and in-memory databases, which cannot be reopened from
+// a path) the scan falls back to the shared connection, accepting that it
+// then blocks the pool for its duration.
+func NewDBIntegrityHandler(database *sql.DB, dbPath string) *DBIntegrityHandler {
+	h := &DBIntegrityHandler{timeout: dbIntegrityTimeout, now: time.Now}
+	h.scan = func(ctx context.Context) ([]db.ForeignKeyDrift, error) {
+		if dbPath != "" {
+			return db.ForeignKeyDriftReportAt(ctx, dbPath, h.hook)
+		}
+		return db.ForeignKeyDriftReport(ctx, database, h.hook)
 	}
+	return h
 }
+
+// SetScanHook registers a function run while the scan's statement is open.
+// For tests that need to hold a scan in flight.
+func (h *DBIntegrityHandler) SetScanHook(f func()) { h.hook = f }
 
 type dbIntegrityRelationship struct {
 	ChildTable  string `json:"childTable"`

@@ -1581,7 +1581,7 @@
       "dbCheckCheckedAt": "Checked {{time}}",
       "dbCheckFailed": "The check failed: {{message}}",
       "dbCheckFailedGeneric": "Could not run the check.",
-      "dbCheckRepairNote": "There is no cleanup button yet. To fix drift, run bindery db-repair from the command line: it lists what it found first and only changes anything when you pass the yes flag. Back up the database before you do.",
+      "dbCheckRepairNote": "There is no cleanup button yet. From the command line, preview the affected rows with bindery db-check, then fix them with bindery db-repair and the yes flag. db-repair refuses to run without the yes flag, so back up the database first.",
       "dbCheckDocsLink": "How db-repair works",
       "importModeHardlinkWarning": "⚠ Hardlink is selected, but this setup can't hardlink — imports will copy instead (slower and uses double the disk). Put the download folder and library on the same filesystem/volume, or switch to Auto.",
       "storageHardlinkOk": "Downloads and library share a filesystem — completed downloads are hardlinked into the library (instant, no extra disk).",

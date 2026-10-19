@@ -1325,7 +1325,7 @@
       "dbCheckCheckedAt": "Sjekket {{time}}",
       "dbCheckFailed": "Sjekken feilet: {{message}}",
       "dbCheckFailedGeneric": "Kunne ikke kjøre sjekken.",
-      "dbCheckRepairNote": "Det finnes ingen opprydningsknapp ennå. For å rette avvik kjører du bindery db-repair fra kommandolinjen: den lister først hva den fant, og endrer ikke noe før du gir den ja-flagget. Ta sikkerhetskopi av databasen først.",
+      "dbCheckRepairNote": "Det finnes ingen opprydningsknapp ennå. Fra kommandolinjen kan du forhåndsvise de berørte radene med bindery db-check og rette dem med bindery db-repair og ja-flagget. db-repair nekter å kjøre uten ja-flagget, så ta sikkerhetskopi av databasen først.",
       "dbCheckDocsLink": "Slik fungerer db-repair",
       "importModeHardlinkWarning": "⚠ Hardlenke er valgt, men dette oppsettet kan ikke lage hardlenker, så importer blir kopiert i stedet (tregere og bruker dobbelt så mye diskplass). Legg nedlastingsmappen og biblioteket på samme filsystem eller volum, eller bytt til Automatisk.",
       "storageHardlinkOk": "Nedlastinger og bibliotek deler filsystem, så ferdige nedlastinger hardlenkes inn i biblioteket (umiddelbart og uten ekstra diskplass).",

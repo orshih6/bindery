@@ -1006,11 +1006,21 @@ writes, and it returns counts only, no row ids and no row contents:
 
 `onDelete` is the action the schema declares for that relationship (`CASCADE`,
 `SET NULL`, `NO ACTION`, ...), which is what a cleanup would replay. A clean
-database answers `relationships: []` and `total: 0`. Only one check runs at a
-time: a second request while one is running gets `409`. A scan is stopped after
-60 seconds with `504`, and a client that disconnects stops it too. Admin only,
-like `/system/storage`. The cleanup is still the `bindery db-repair` command
-(see [DEPLOYMENT.md](DEPLOYMENT.md#database-foreign-key-integrity)).
+database answers `relationships: []` and `total: 0`. A child table with two
+foreign keys to the same parent (for example `requests` to `users`) gets one
+row per key, told apart by `onDelete`.
+
+The scan runs on its own short lived read only connection to the database
+file, so it does not hold the connection the rest of Bindery uses: `/health`,
+sign in and the UI keep answering while it runs. (With no database path, as in
+tests on an in-memory database, it falls back to the shared connection and
+does block it.) Only one check runs at a time: a second request while one is
+running gets `409` straight away. A scan is stopped after 60 seconds with
+`504`, and a client that disconnects stops it too. While it runs the scan
+pins a WAL snapshot, which the 60 second limit bounds. Admin only, like
+`/system/storage`. To preview the affected rows from the command line use
+`bindery db-check`; the cleanup is `bindery db-repair` with the yes flag (see
+[DEPLOYMENT.md](DEPLOYMENT.md#database-foreign-key-integrity)).
 
 `POST /api/v1/library/scan` answers `202` with `{"message": "library scan
 started"}` when it starts a scan. While a scan is already running it no longer

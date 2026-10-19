@@ -71,7 +71,7 @@ func TestDBIntegrityCheck_Shape(t *testing.T) {
 }
 
 func TestDBIntegrityCheck_CleanIsEmptyArray(t *testing.T) {
-	h := NewDBIntegrityHandler(nil)
+	h := NewDBIntegrityHandler(nil, "")
 	h.scan = emptyScan
 	rec := postIntegrity(context.Background(), h)
 	if !strings.Contains(rec.Body.String(), `"relationships":[]`) || !strings.Contains(rec.Body.String(), `"total":0`) {
@@ -94,7 +94,7 @@ func TestDBIntegrityCheck_RealDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rec := postIntegrity(context.Background(), NewDBIntegrityHandler(database))
+	rec := postIntegrity(context.Background(), NewDBIntegrityHandler(database, ""))
 	var got dbIntegrityResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
