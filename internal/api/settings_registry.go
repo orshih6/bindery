@@ -162,7 +162,7 @@ var settingDescriptors = []SettingDescriptor{
 	},
 	{
 		Key: SettingMetadataEnrichersDisabled, Type: SettingTypeString, Default: "",
-		Description: "Comma separated metadata enrichers to turn off: any of openlibrary, hardcover, googlebooks, dnb, plus the audiobook sources audible (Audible catalogue) and audnex. Empty leaves all on. The primary provider is never turned off, so naming it is ignored. A disabled source is sent no request. A change applies to the next metadata lookup, without a restart.",
+		Description: "Comma separated metadata enrichers to turn off: any of openlibrary, hardcover, googlebooks, dnb, plus the audiobook sources audible (Audible catalogue) and audnex. Empty leaves all on. The primary provider is never turned off, so naming it is ignored. A disabled enricher is no longer used as an enricher (Hardcover can still be reached by its list sync, recommendations and series features), and a disabled audible or audnex is never asked. A change applies to the next metadata lookup, without a restart.",
 		State:       SettingStateActive,
 	},
 	{

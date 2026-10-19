@@ -9,6 +9,7 @@ import (
 	"github.com/vavallee/bindery/internal/api"
 	"github.com/vavallee/bindery/internal/db"
 	"github.com/vavallee/bindery/internal/metadata"
+	"github.com/vavallee/bindery/internal/metadata/audnex"
 	"github.com/vavallee/bindery/internal/models"
 )
 
@@ -105,10 +106,43 @@ func TestAudiobookSourcesFollowTheSetting(t *testing.T) {
 	if got := metadata.NewAggregator(set.primary, set.enrichers...).ProviderNames(); !reflect.DeepEqual(got, []string{"openlibrary", "hardcover", "dnb"}) {
 		t.Errorf("enrichers changed: %v", got)
 	}
-	agg := metadata.NewAggregator(set.primary, set.enrichers...)
+	// apply must hand the flags to the running aggregator: counting clients
+	// see nothing while the setting names them, and calls again once cleared.
+	aud, ax := &countingAudible{}, &countingAudnex{}
+	agg := metadata.NewAggregator(set.primary, set.enrichers...).WithAudibleCatalogue(aud).WithAudnexClient(ax)
 	if err := m.apply(ctx, agg); err != nil {
 		t.Fatal(err)
 	}
+	_, _ = agg.GetAuthorAudiobooks(ctx, "Author A")
+	_, _ = agg.GetCanonicalBookByASIN(ctx, "B01N5IB20Q")
+	if aud.calls.Load() != 0 || ax.calls.Load() != 0 {
+		t.Fatalf("disabled sources were called: audible=%d audnex=%d", aud.calls.Load(), ax.calls.Load())
+	}
+	if err := repo.Delete(ctx, api.SettingMetadataEnrichersDisabled); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.apply(ctx, agg); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = agg.GetAuthorAudiobooks(ctx, "Author A")
+	_, _ = agg.GetCanonicalBookByASIN(ctx, "B01N5IB20Q")
+	if aud.calls.Load() == 0 || ax.calls.Load() == 0 {
+		t.Errorf("re-enabled sources were not called: audible=%d audnex=%d", aud.calls.Load(), ax.calls.Load())
+	}
+}
+
+type countingAudible struct{ calls atomic.Int32 }
+
+func (c *countingAudible) SearchBooksByAuthor(context.Context, string) ([]models.Book, error) {
+	c.calls.Add(1)
+	return nil, nil
+}
+
+type countingAudnex struct{ calls atomic.Int32 }
+
+func (c *countingAudnex) GetBook(context.Context, string) (*audnex.Book, error) {
+	c.calls.Add(1)
+	return nil, nil
 }
 
 // callCounter is a provider that counts every call it receives.

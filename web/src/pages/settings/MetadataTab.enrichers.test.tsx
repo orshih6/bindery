@@ -102,6 +102,34 @@ describe('Metadata sources that can be turned off', () => {
     expect((await box('Hardcover')).disabled).toBe(false)
   })
 
+  it('puts the box back and says so when the save fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(api.setSetting).mockRejectedValueOnce(new Error('400'))
+    render(<MetadataTab />)
+    fireEvent.click(await box('DNB (Deutsche Nationalbibliothek)'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not save that change')
+    await waitFor(async () => expect((await box('DNB (Deutsche Nationalbibliothek)')).checked).toBe(true))
+    // The next save starts from the last saved list, not the failed one.
+    await waitFor(async () => expect((await box('audnex')).disabled).toBe(false))
+    fireEvent.click(await box('audnex'))
+    await waitFor(() => expect(api.setSetting).toHaveBeenLastCalledWith(KEY, 'audnex'))
+  })
+
+  it('ignores a click while a save is in flight', async () => {
+    let release!: () => void
+    vi.mocked(api.setSetting).mockImplementationOnce(
+      () => new Promise<void>(resolve => { release = () => resolve() }) as ReturnType<typeof api.setSetting>,
+    )
+    render(<MetadataTab />)
+    fireEvent.click(await box('DNB (Deutsche Nationalbibliothek)'))
+    await waitFor(() => expect(api.setSetting).toHaveBeenCalledTimes(1))
+    fireEvent.click(await box('audnex'))
+    expect(api.setSetting).toHaveBeenCalledTimes(1)
+    release()
+    await waitFor(async () => expect((await box('audnex')).disabled).toBe(false))
+    expect((await box('audnex')).checked).toBe(true)
+  })
+
   it('locks the current primary and frees the previous one', async () => {
     seedSettings({ 'metadata.primary_provider': 'dnb', [KEY]: 'dnb' })
     render(<MetadataTab />)

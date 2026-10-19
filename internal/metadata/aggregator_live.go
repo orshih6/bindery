@@ -305,6 +305,10 @@ func (a *Aggregator) GetCanonicalBookByASIN(ctx context.Context, asin string) (*
 	return a.load().GetCanonicalBookByASIN(ctx, asin)
 }
 
+func (a *Aggregator) AudnexDisabled() bool {
+	return a.load().AudnexDisabled()
+}
+
 func (a *Aggregator) GetAuthorAudiobooks(ctx context.Context, authorName string) ([]models.Book, error) {
 	return a.load().GetAuthorAudiobooks(ctx, authorName)
 }

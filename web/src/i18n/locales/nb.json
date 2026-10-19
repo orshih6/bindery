@@ -1370,7 +1370,7 @@
       "authorWikidataLabel": "Forfatterbilder og biografier fra Wikidata",
       "authorWikidataHint": "Fyller inn manglende bilde og biografi for en forfatter fra Wikimedia Commons og Wikipedia, funnet på Wikidata via forfatterens autoritets-ID fra biblioteket (NORAF, GND, BnF eller OpenLibrary), aldri via navn. Oppslagene følger den daglige forfatteroppdateringen, og hvert bilde og hver biografi krediteres på forfatterens side. Så lenge dette er av, sendes ingen forespørsler til Wikimedia.",
       "enrichersHeading": "Berikere",
-      "enrichersHint": "Disse leverandørene fyller inn det primærleverandøren lar stå tomt. Fjern haken for en av dem, så slutter Bindery å spørre den. Det gir færre forespørsler, men mindre utfylling: DNB leverer også omslag gjennom sin omslagstjeneste, og Hardcover leverer også kuraterte sjangere, serier og språkopplysninger om utgaver. Gjelder fra neste oppslag, uten omstart.",
+      "enrichersHint": "Disse leverandørene fyller inn det primærleverandøren lar stå tomt. Fjern haken for en av dem, så slutter Bindery å bruke den som beriker. Det gir færre forespørsler, men mindre utfylling: DNB leverer også omslag gjennom sin omslagstjeneste, og Hardcover leverer også kuraterte sjangere, serier og språkopplysninger om utgaver. Gjelder fra neste oppslag, uten omstart.",
       "enricherPrimaryNote": "Dette er primærleverandøren, så den kan ikke slås av.",
       "enricherOpenlibraryLabel": "OpenLibrary",
       "enricherOpenlibraryHint": "Beskrivelser, omslag og emner.",
@@ -1383,7 +1383,8 @@
       "audiobookSourcesHeading": "Lydbokkilder",
       "audibleLabel": "Audible-katalogen",
       "audibleHint": "Legger lydbøker til en forfatters katalog. Bruker et ikke offentliggjort Amazon-endepunkt, ikke et dokumentert API.",
-      "audnexHint": "Innleser, spilletid og omslag for lydbøker. En fellesskapsproxy over de samme Audible-dataene."
+      "audnexHint": "Innleser, spilletid og omslag for lydbøker. En fellesskapsproxy over de samme Audible-dataene.",
+      "sourcesSaveFailed": "Kunne ikke lagre endringen, så den ble satt tilbake. Prøv igjen."
     },
     "import": {
       "csvHeading": "CSV med forfatternavn",

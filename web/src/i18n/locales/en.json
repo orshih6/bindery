@@ -1632,7 +1632,7 @@
       "authorWikidataLabel": "Author photos and bios from Wikidata",
       "authorWikidataHint": "Fills an author's missing photo and bio from Wikimedia Commons and Wikipedia, found on Wikidata by the author's library authority ID (NORAF, GND, BnF or OpenLibrary), never by name. Lookups ride on the daily author refresh, and each photo and bio is credited on the author's page. While this is off, Wikimedia is sent no request.",
       "enrichersHeading": "Enrichers",
-      "enrichersHint": "These providers fill in what the primary leaves empty. Untick one and Bindery stops asking it, which means fewer requests but less fill in: DNB also supplies covers through its cover service, and Hardcover also supplies curated genres, series and edition language evidence. Takes effect from the next lookup, with no restart.",
+      "enrichersHint": "These providers fill in what the primary leaves empty. Untick one and Bindery stops using it as an enricher, which means fewer requests but less fill in: DNB also supplies covers through its cover service, and Hardcover also supplies curated genres, series and edition language evidence. Takes effect from the next lookup, with no restart.",
       "enricherPrimaryNote": "This is the primary provider, so it cannot be turned off.",
       "enricherOpenlibraryLabel": "OpenLibrary",
       "enricherOpenlibraryHint": "Descriptions, covers and subjects.",
@@ -1646,7 +1646,8 @@
       "audibleLabel": "Audible catalogue",
       "audibleHint": "Adds audiobooks to an author's catalogue. It uses an unpublished Amazon endpoint, not a documented API.",
       "audnexLabel": "audnex",
-      "audnexHint": "Narrator, runtime and cover for audiobooks. A community proxy over the same Audible data."
+      "audnexHint": "Narrator, runtime and cover for audiobooks. A community proxy over the same Audible data.",
+      "sourcesSaveFailed": "Could not save that change, so it was put back. Try again."
     },
     "import": {
       "csvHeading": "CSV of author names",

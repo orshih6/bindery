@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState, useId } from 'react'
+import { FormEvent, useEffect, useRef, useState, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useConfirmDialog } from '../../components/useConfirmDialog'
 import { api, AuthorMonitorMode, MetadataProfile } from '../../api/client'
@@ -90,13 +90,33 @@ export default function MetadataTab() {
   // A stored hardcover primary with no token runs as OpenLibrary on the server.
   const storedPrimary = settings['metadata.primary_provider'] || 'openlibrary'
   const effectivePrimary = storedPrimary === 'hardcover' && !hardcoverTokenConfigured ? 'openlibrary' : storedPrimary
+  // One save at a time: a click while a save is in flight is ignored (the boxes
+  // are disabled meanwhile), so the order requests arrive in cannot store a
+  // stale list. A failed save puts the box back to the last saved value.
+  const [savingSources, setSavingSources] = useState(false)
+  const [sourcesError, setSourcesError] = useState(false)
+  const savingSourcesRef = useRef(false)
   const toggleSource = async (name: string) => {
+    if (savingSourcesRef.current) return
+    const previous = settings[ENRICHERS_DISABLED_KEY] ?? ''
     const next = disabledSources.includes(name)
       ? disabledSources.filter(n => n !== name)
       : [...disabledSources, name]
     const value = ALL_TOGGLEABLE.filter(n => next.includes(n)).join(',')
+    savingSourcesRef.current = true
+    setSavingSources(true)
+    setSourcesError(false)
     setSettings(s => ({ ...s, [ENRICHERS_DISABLED_KEY]: value }))
-    await api.setSetting(ENRICHERS_DISABLED_KEY, value).catch(console.error)
+    try {
+      await api.setSetting(ENRICHERS_DISABLED_KEY, value)
+    } catch (err) {
+      console.error(err)
+      setSettings(s => ({ ...s, [ENRICHERS_DISABLED_KEY]: previous }))
+      setSourcesError(true)
+    } finally {
+      savingSourcesRef.current = false
+      setSavingSources(false)
+    }
   }
 
   const reload = () => api.listMetadataProfiles().then(setProfiles).catch(console.error)
@@ -172,7 +192,7 @@ export default function MetadataTab() {
             {t('settings.general.enrichersHeading', 'Enrichers')}
           </h4>
           <p className="text-xs text-slate-600 dark:text-zinc-500 mb-2">
-            {t('settings.general.enrichersHint', 'These providers fill in what the primary leaves empty. Untick one and Bindery stops asking it, which means fewer requests but less fill in: DNB also supplies covers through its cover service, and Hardcover also supplies curated genres, series and edition language evidence. Takes effect from the next lookup, with no restart.')}
+            {t('settings.general.enrichersHint', 'These providers fill in what the primary leaves empty. Untick one and Bindery stops using it as an enricher, which means fewer requests but less fill in: DNB also supplies covers through its cover service, and Hardcover also supplies curated genres, series and edition language evidence. Takes effect from the next lookup, with no restart.')}
           </p>
           <div className="space-y-2">
             {ENRICHER_ROWS.map(row => {
@@ -184,7 +204,7 @@ export default function MetadataTab() {
                     className="mt-1"
                     aria-label={t(row.labelKey, row.label)}
                     checked={isPrimary || !disabledSources.includes(row.name)}
-                    disabled={isPrimary}
+                    disabled={isPrimary || savingSources}
                     onChange={() => toggleSource(row.name)}
                   />
                   <span>
@@ -211,6 +231,7 @@ export default function MetadataTab() {
                   className="mt-1"
                   aria-label={t(row.labelKey, row.label)}
                   checked={!disabledSources.includes(row.name)}
+                  disabled={savingSources}
                   onChange={() => toggleSource(row.name)}
                 />
                 <span>
@@ -220,6 +241,11 @@ export default function MetadataTab() {
               </label>
             ))}
           </div>
+          {sourcesError && (
+            <p className="text-xs text-red-600 dark:text-red-400 mt-2" role="alert">
+              {t('settings.general.sourcesSaveFailed', 'Could not save that change, so it was put back. Try again.')}
+            </p>
+          )}
         </div>
 
         {/* Author defaults */}

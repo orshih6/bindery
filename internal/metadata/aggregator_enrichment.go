@@ -96,6 +96,10 @@ func (a *aggregatorCore) GetCanonicalBookByASIN(ctx context.Context, asin string
 	return canonical, nil
 }
 
+// AudnexDisabled reports whether the operator turned audnex off (#2015), so a
+// caller can say why an ASIN lookup found nothing.
+func (a *aggregatorCore) AudnexDisabled() bool { return a != nil && a.audnexOff }
+
 func (a *aggregatorCore) getAudnexBookByASIN(ctx context.Context, asin string) (*audnex.Book, error) {
 	asin = normalizeASIN(asin)
 	if a == nil || a.audnex == nil || a.audnexOff || asin == "" {
