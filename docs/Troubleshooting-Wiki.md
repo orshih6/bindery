@@ -12,6 +12,13 @@ Title-only releases, connecting words, file-format labels and narrator credits
 remain supported. Unrecognised trailing text can be conservatively rejected;
 inspect the release's title and author rather than relying only on shared words.
 
+When a filter is wrong about a release you can see, you do not have to wait for
+a fix. The book page's interactive search keeps what the title and author check
+and the language filter removed in a **Filtered** section under the results. It
+is collapsed by default, shows the reason on each row, and has the same Grab
+button. Releases dropped as not a book (video, a movie or console category, a
+raw usenet posting) are listed in the search details panel only.
+
 ### A release names the next book in the series
 
 Matching also reads what comes AFTER your title. A release that has the whole
