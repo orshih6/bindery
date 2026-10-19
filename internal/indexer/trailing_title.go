@@ -277,6 +277,62 @@ func siblingTail(cleaned string, wanted []string) (num int, tail string, ok bool
 	return n, strings.Join(toks[i+1:], " "), true
 }
 
+// editionWords are words that describe a printing and not a book. A suffix made
+// only of them ("Deluxe Illustrated Edition") names an edition of the wanted
+// book, so it is never read as another title.
+var editionWords = map[string]bool{
+	"edition": true, "editions": true, "illustrated": true, "annotated": true, "unabridged": true,
+	"abridged": true, "revised": true, "expanded": true, "anniversary": true, "deluxe": true,
+	"special": true, "collectors": true, "limited": true, "updated": true, "original": true,
+	"classic": true, "novel": true, "audiobook": true, "ebook": true, "paperback": true,
+	"hardcover": true, "large": true, "print": true, "reissue": true, "movie": true, "film": true,
+	"tie": true, "new": true, "complete": true, "second": true, "third": true, "first": true,
+}
+
+// prefixedSuffix reads a library title that is the wanted title, a punctuation
+// separator and a further title, with no series number ("Rotten School - Punk'd
+// and skunked", #3382). The suffix is the name of another book that the library
+// writes with the series prefix. It returns the suffix as normalised words.
+// ok is false for every other shape: no separator ("Dune Messiah"), a number
+// or marker word right after the title (siblingTail reads those), a suffix
+// made only of edition words, or a title that does not start with the wanted
+// one.
+func prefixedSuffix(cleaned string, wanted []string) (tail string, ok bool) {
+	if len(wanted) == 0 {
+		return "", false
+	}
+	norm := NormalizeRelease(cleaned)
+	loc := phraseRegex(wanted).FindStringIndex(norm)
+	if loc == nil || loc[0] != 0 {
+		return "", false
+	}
+	k := len(strings.Fields(norm[:loc[1]]))
+	toks, tokOK := tokenizeRelease(cleaned)
+	if !tokOK || k >= len(toks) || !punctBefore(toks[k]) {
+		return "", false
+	}
+	if first := toks[k].text; seriesNumberMarkers[first] || isAllDigits(first) {
+		return "", false
+	}
+	words := make([]string, 0, len(toks)-k)
+	for _, t := range toks[k:] {
+		words = append(words, t.text)
+	}
+	tail = strings.Join(words, " ")
+	ident := titleIdentityKeywords(tail)
+	editionOnly := len(ident) > 0
+	for _, w := range ident {
+		if !editionWords[w] {
+			editionOnly = false
+			break
+		}
+	}
+	if editionOnly {
+		return "", false
+	}
+	return tail, true
+}
+
 // newTrailingRules prepares the rules for one wanted title. wanted are the
 // identity word lists of every reading of the wanted title, used to keep a
 // library title that contains the wanted one out of signal B.
@@ -324,6 +380,11 @@ func newTrailingRules(title string, bc bookContext, wanted ...[]string) *trailin
 		if !tr.posKnown && len(wanted) > 0 {
 			if n, tail, ok := siblingTail(cleaned, wanted[0]); ok {
 				tr.siblingNums[n] = true
+				variants = append(variants, tail)
+			} else if tail, ok := prefixedSuffix(cleaned, wanted[0]); ok {
+				// An unnumbered series prefixed sibling (#3382): its suffix is
+				// another book's name, whether or not the standalone row of
+				// that book is excluded from the listing.
 				variants = append(variants, tail)
 			}
 		}

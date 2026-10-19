@@ -143,7 +143,15 @@ and three more:
   starts with the wanted title and a number of 2 or more counts, so titles that
   end in a number, such as `Catch-22` or `Apollo 13`, are unaffected.
   A stored series position switches this off, so a duplicate row never hides
-  the wanted volume's own release. Known trade-off: with a library title
+  the wanted volume's own release. The same goes for a library title with the
+  series prefix and no number: with `Rotten School - Punk'd and skunked` in
+  the library (excluded books are not listed, so the standalone `Punk'd and
+  Skunked` row does not help), `R L Stine - [Rotten School 11] - Punk'd and
+  Skunked (epub)` is dropped for the wanted `Rotten School` (`release names
+  another title after this one`), whichever way the apostrophe is spelled.
+  The prefix must be followed by a dash, colon or bracket, and a suffix made
+  only of edition words (`Deluxe Illustrated Edition`) is not read as a book.
+  Searching for `Punk'd and Skunked` itself still finds these releases. Known trade-off: with a library title
   `Dune 2 - Illustrated Edition` and no stored position, the plain `Dune -
   Illustrated Edition (epub)` is dropped for the wanted `Dune`, because the
   words after the number count as another title.
