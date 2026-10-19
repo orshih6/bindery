@@ -757,6 +757,71 @@ describe('SeriesPage', () => {
       expect(screen.getByRole('dialog', { name: 'Add Series' })).toBeInTheDocument()
     })
 
+    it('keeps Enter in the Hardcover search from submitting the modal form', async () => {
+      vi.mocked(api.searchHardcoverSeries).mockResolvedValue([stormlightResult])
+      renderSeriesPage([])
+      const dialog = await openAddModal()
+      const box = within(dialog).getByRole('searchbox', { name: 'Search Hardcover for a series' })
+      fireEvent.change(box, { target: { value: 'stormlight' } })
+
+      // fireEvent returns false when the handler called preventDefault, which
+      // is what stops the enclosing form's implicit submit.
+      expect(fireEvent.keyDown(box, { key: 'Enter' })).toBe(false)
+      await within(dialog).findByText('Brandon Sanderson')
+      expect(api.createSeries).not.toHaveBeenCalled()
+      expect(within(dialog).queryByText('Series name is required')).not.toBeInTheDocument()
+    })
+
+    it('disables Add while a create is in flight so a double click makes one request', async () => {
+      vi.mocked(api.searchHardcoverSeries).mockResolvedValue([stormlightResult])
+      vi.mocked(api.createSeries).mockReturnValue(new Promise(() => {}))
+      renderSeriesPage([])
+      const dialog = await openAddModal()
+      await searchFor(dialog, 'stormlight')
+
+      const add = within(dialog).getByRole('button', { name: 'Add The Stormlight Archive' })
+      fireEvent.click(add)
+      fireEvent.click(add)
+
+      expect(api.createSeries).toHaveBeenCalledTimes(1)
+      expect(add).toBeDisabled()
+    })
+
+    it('clears a title search that would hide the series just created', async () => {
+      const other: Series = { id: 2, foreignSeriesId: 's-2', title: 'Café Chronicles', description: '', monitored: false, books: [] }
+      vi.mocked(api.searchHardcoverSeries).mockResolvedValue([stormlightResult])
+      vi.mocked(api.createSeries).mockResolvedValue(created)
+      vi.mocked(api.getSeriesHardcoverDiff).mockResolvedValue(emptyDiff)
+      renderSeriesPage([other])
+      fireEvent.change(await screen.findByRole('searchbox', { name: 'Search series…' }), { target: { value: 'cafe' } })
+      vi.mocked(api.listSeries).mockResolvedValue([other, created])
+      const dialog = await openAddModal()
+      await searchFor(dialog, 'stormlight')
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add The Stormlight Archive' }))
+
+      expect(await screen.findByRole('heading', { name: 'The Stormlight Archive' })).toBeInTheDocument()
+      expect(screen.getByRole('searchbox', { name: 'Search series…' })).toHaveValue('')
+    })
+
+    it('clears a title search that would hide the existing series a 409 opens', async () => {
+      const other: Series = { id: 2, foreignSeriesId: 's-2', title: 'Café Chronicles', description: '', monitored: false, books: [] }
+      const existing: Series = { ...created, id: 7, title: 'My Stormlight', hardcoverLink: { ...link, seriesId: 7 } }
+      vi.mocked(api.searchHardcoverSeries).mockResolvedValue([stormlightResult])
+      vi.mocked(api.createSeries).mockRejectedValue(new ApiError(409, { error: 'already', seriesId: 7 }, 'Conflict'))
+      vi.mocked(api.getSeriesHardcoverDiff).mockResolvedValue({ ...emptyDiff, seriesId: 7 })
+      renderSeriesPage([other, existing])
+      fireEvent.change(await screen.findByRole('searchbox', { name: 'Search series…' }), { target: { value: 'cafe' } })
+      expect(screen.queryByRole('heading', { name: 'My Stormlight' })).not.toBeInTheDocument()
+      const dialog = await openAddModal()
+      await searchFor(dialog, 'stormlight')
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add The Stormlight Archive' }))
+
+      expect(await screen.findByRole('heading', { name: 'My Stormlight' })).toBeInTheDocument()
+      expect(screen.getByRole('searchbox', { name: 'Search series…' })).toHaveValue('')
+    })
+
     it('still creates a series by typing its name', async () => {
       const manual: Series = { id: 15, foreignSeriesId: 'manual:series:15', title: 'Dune Chronicles', description: '', monitored: false, books: [] }
       vi.mocked(api.createSeries).mockResolvedValue(manual)

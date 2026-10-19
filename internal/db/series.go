@@ -539,6 +539,11 @@ func (r *SeriesRepo) GetByHardcoverSeriesID(ctx context.Context, hardcoverSeries
 		"SELECT series_id FROM series_hardcover_links WHERE hardcover_series_id = ? ORDER BY series_id LIMIT 1",
 		hardcoverSeriesID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Only the prefixed spelling is a Hardcover id; a bare "42" could be
+		// any other provider's series.
+		if !strings.HasPrefix(hardcoverSeriesID, HardcoverSeriesIDPrefix) {
+			return nil, nil
+		}
 		return r.GetByForeignID(ctx, hardcoverSeriesID)
 	}
 	if err != nil {

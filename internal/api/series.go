@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -375,12 +376,52 @@ func (h *SeriesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, series)
 }
 
+// Bounds on the client supplied Hardcover fields. The catalogue overrides them
+// whenever it answers, so only fallbacks (the slug) are ever stored from here.
+const (
+	hardcoverCreateTextMax = 500
+	hardcoverCreateSlugMax = 200
+)
+
+var hardcoverSeriesForeignIDRe = regexp.MustCompile(`^hc-series:[0-9]{1,18}$`)
+
+// createMu serialises the duplicate check, insert and link store of
+// createFromHardcover, so parallel identical requests cannot each pass the
+// check and create several series for one Hardcover series. The app is a
+// single process and the route is admin only, so no database constraint is
+// needed. It is never held across the provider call.
+var createMu sync.Mutex
+
+// duplicateHardcoverSeries answers 409 with the existing series id when one of
+// the given Hardcover ids is already in the library. It reports whether it
+// wrote a response (a duplicate or an error).
+func (h *SeriesHandler) duplicateHardcoverSeries(w http.ResponseWriter, r *http.Request, ids ...string) bool {
+	for _, hcID := range ids {
+		existing, err := h.series.GetByHardcoverSeriesID(r.Context(), hcID)
+		if err != nil {
+			writeServerError(w, r, err)
+			return true
+		}
+		if existing != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":    "this hardcover series is already in your library",
+				"seriesId": existing.ID,
+			})
+			return true
+		}
+	}
+	return false
+}
+
 // createFromHardcover creates a series from a Hardcover search result and
-// links it. The provider is asked first, so a provider failure never creates
-// anything; if storing the link still fails the new series is deleted again,
-// so no orphan is left behind. A Hardcover series that is already in the
-// library is not created twice: the answer is 409 carrying the existing
-// series id, which the UI opens instead of showing an error.
+// links it. A Hardcover series that is already in the library is not created
+// twice: the answer is 409 carrying the existing series id, which the UI opens
+// instead of showing an error. The id is checked before the provider is asked
+// (so a duplicate costs no Hardcover call), and again under createMu once the
+// catalogue has resolved it. An id the provider does not know is a 404 and
+// creates nothing; the provider is asked first, so a failure never creates a
+// series either. If storing the link still fails the new series is deleted
+// again, so no orphan is left behind.
 func (h *SeriesHandler) createFromHardcover(w http.ResponseWriter, r *http.Request, rawTitle string, req seriesHardcoverLinkRequest) {
 	if !h.requireEnhancedHardcoverAPI(w, r) {
 		return
@@ -391,7 +432,26 @@ func (h *SeriesHandler) createFromHardcover(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hardcover.foreignId is required"})
 		return
 	}
-	link, err := h.linkFromRequest(ctx, 0, req, "manual")
+	if !hardcoverSeriesForeignIDRe.MatchString(req.ForeignID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hardcover.foreignId is not a hardcover series id"})
+		return
+	}
+	if len(req.Title) > hardcoverCreateTextMax || len(req.AuthorName) > hardcoverCreateTextMax ||
+		len(req.ProviderID) > hardcoverCreateSlugMax || len(req.Slug) > hardcoverCreateSlugMax {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hardcover fields are too long"})
+		return
+	}
+	if req.BookCount < 0 {
+		req.BookCount = 0
+	}
+	if req.Confidence > 1 {
+		req.Confidence = 1
+	}
+
+	if h.duplicateHardcoverSeries(w, r, req.ForeignID) {
+		return
+	}
+	link, found, err := h.linkFromRequestCatalog(ctx, 0, req, "manual")
 	if err != nil {
 		if errors.Is(err, errSeriesMetadataProvider) {
 			writeUpstreamError(w, err)
@@ -400,26 +460,19 @@ func (h *SeriesHandler) createFromHardcover(w http.ResponseWriter, r *http.Reque
 		writeServerError(w, r, err)
 		return
 	}
-
-	// Check the id the client sent and the one the catalogue resolved it to.
-	for _, hcID := range []string{req.ForeignID, link.HardcoverSeriesID} {
-		existing, err := h.series.GetByHardcoverSeriesID(ctx, hcID)
-		if err != nil {
-			writeServerError(w, r, err)
-			return
-		}
-		if existing != nil {
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":    "this hardcover series is already in your library",
-				"seriesId": existing.ID,
-			})
-			return
-		}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "hardcover series not found"})
+		return
 	}
-
 	title, validationErr := validateSeriesTitle(firstNonEmpty(strings.TrimSpace(rawTitle), link.HardcoverTitle, strings.TrimSpace(req.Title)))
 	if validationErr != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": validationErr})
+		return
+	}
+
+	createMu.Lock()
+	defer createMu.Unlock()
+	if h.duplicateHardcoverSeries(w, r, req.ForeignID, link.HardcoverSeriesID) {
 		return
 	}
 	series, err := h.series.CreateManual(ctx, title)
@@ -1446,6 +1499,14 @@ func scoreHardcoverCandidate(series *models.Series, result seriesHardcoverSearch
 }
 
 func (h *SeriesHandler) linkFromRequest(ctx context.Context, seriesID int64, body seriesHardcoverLinkRequest, linkedBy string) (*models.SeriesHardcoverLink, error) {
+	link, _, err := h.linkFromRequestCatalog(ctx, seriesID, body, linkedBy)
+	return link, err
+}
+
+// linkFromRequestCatalog is linkFromRequest that also reports whether the
+// provider's catalogue knew the series. When it did not, the link is only the
+// client's own words; PutHardcoverLink accepts that, series creation does not.
+func (h *SeriesHandler) linkFromRequestCatalog(ctx context.Context, seriesID int64, body seriesHardcoverLinkRequest, linkedBy string) (*models.SeriesHardcoverLink, bool, error) {
 	confidence := body.Confidence
 	if confidence <= 0 {
 		confidence = 1
@@ -1462,14 +1523,14 @@ func (h *SeriesHandler) linkFromRequest(ctx context.Context, seriesID int64, bod
 		LinkedBy:            linkedBy,
 	}
 	if h.meta == nil {
-		return link, nil
+		return link, false, nil
 	}
 	catalog, err := h.meta.GetSeriesCatalog(ctx, body.ForeignID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errSeriesMetadataProvider, err)
+		return nil, false, fmt.Errorf("%w: %w", errSeriesMetadataProvider, err)
 	}
 	if catalog == nil {
-		return link, nil
+		return link, false, nil
 	}
 	link.HardcoverSeriesID = catalog.ForeignID
 	link.HardcoverProviderID = catalog.ProviderID
@@ -1479,7 +1540,7 @@ func (h *SeriesHandler) linkFromRequest(ctx context.Context, seriesID int64, bod
 	link.HardcoverTitle = catalog.Title
 	link.HardcoverAuthorName = catalog.AuthorName
 	link.HardcoverBookCount = catalog.BookCount
-	return link, nil
+	return link, true, nil
 }
 
 func (h *SeriesHandler) hardcoverCatalog(ctx context.Context, foreignID string) (*metadata.SeriesCatalog, error) {

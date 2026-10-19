@@ -130,8 +130,19 @@ export default function SeriesPage() {
   // A series picked from a Hardcover search arrives already linked: open it and
   // load its diff so the missing books can be added one by one. Nothing is
   // added automatically (#1706).
+  // A title search or filter that hides the series just created or opened
+  // would make the add look like it did nothing, so both are cleared first.
+  const revealSeries = () => {
+    setSearch('')
+    const params = new URLSearchParams(searchParams)
+    params.delete('filter')
+    params.delete('size')
+    setSearchParams(params, { replace: true })
+  }
+
   const handleCreatedFromHardcover = async (series: Series) => {
     await refreshSeriesList()
+    revealSeries()
     setExpanded(series.id)
     setShowAddSeries(false)
     void loadHardcoverDiff(series, true)
@@ -140,6 +151,7 @@ export default function SeriesPage() {
   // The picked Hardcover series is already in the library: open that one.
   const handleHardcoverAlreadyAdded = async (seriesId: number) => {
     const list = await refreshSeriesList()
+    revealSeries()
     setExpanded(seriesId)
     setShowAddSeries(false)
     setLinkResult(prev => ({ ...prev, [seriesId]: t('series.addFromHardcover.alreadyAdded') }))
