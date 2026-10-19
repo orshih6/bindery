@@ -1373,6 +1373,45 @@ and gives up after 8 attempts.
 The delivery queue is not per user: it is the install's one Calibre target,
 and every route here is as privileged as an admin reading the queue.
 
+### Readarr and CSV import (admin)
+
+```
+POST   /api/v1/migrate/readarr                    upload readarr.db (multipart "file"); 202 with the status below, 409 if one is running
+GET    /api/v1/migrate/readarr/status             poll the import and its catalogue backfill
+POST   /api/v1/migrate/csv                        upload a CSV of author names; answers when the names are added
+```
+
+The Readarr import runs in the background, in two phases. First the database
+import (`running`), then a catalogue backfill that fetches each added author's
+books at about 3 seconds per author, two at a time at most. The backfill
+outlives the import, so `running` goes `false` while `catalogueRunning` is still
+`true`. A client that wants the whole job keeps polling until both are `false`.
+
+```json
+{
+  "running": false,
+  "startedAt": "2026-10-18T12:00:00Z",
+  "finishedAt": "2026-10-18T12:01:10Z",
+  "message": "import complete",
+  "error": "",
+  "result": { "authors": { "requested": 500, "added": 480 }, "indexers": {}, "downloadClients": {}, "blocklist": {} },
+  "catalogueRunning": true,
+  "catalogueTotal": 480,
+  "catalogueDone": 112
+}
+```
+
+`message`, `error`, `finishedAt` and `result` are left out when empty. The three
+`catalogue*` fields are always present. A failed fetch counts as done, so
+`catalogueDone` reaches `catalogueTotal`. The counters stay readable after the
+backfill ends, reset when the next import starts (unless a backfill is still
+running, in which case the new authors are added to its total), and live in
+memory only: a restart sets them back to `false`, `0`, `0`. An older server
+leaves them out, which clients should read as no backfill.
+
+The CSV upload has no status endpoint. Its catalogue backfill runs the same way
+but is not reported.
+
 ### Settings
 
 ```
