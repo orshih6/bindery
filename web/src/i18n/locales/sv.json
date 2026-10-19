@@ -1354,7 +1354,22 @@
       "rotateSessionSecretConfirm": "Vill du rotera hemligheten för signering av sessioner? Befintliga inloggningar fortsätter att fungera under en övergångsperiod via den tidigare hemligheten. En andra rotation stänger den perioden.",
       "rotateSessionSecretTitle": "Rotera sessionshemlighet",
       "rotateSessionSecretAcknowledge": "Jag förstår att en andra rotation loggar ut alla.",
-      "defaultMediaTypeHint": "Används för nya författare, och för böcker du lägger till var för sig, när inget uttryckligt val görs. Befintliga poster påverkas inte: ändra författare med massåtgärden på sidan Författare, och böcker från sidan Böcker med Ange e-bok, Ange ljudbok eller Ange båda, vilket också omfattar dina önskade böcker när Böcker är filtrerat på Önskade."
+      "defaultMediaTypeHint": "Används för nya författare, och för böcker du lägger till var för sig, när inget uttryckligt val görs. Befintliga poster påverkas inte: ändra författare med massåtgärden på sidan Författare, och böcker från sidan Böcker med Ange e-bok, Ange ljudbok eller Ange båda, vilket också omfattar dina önskade böcker när Böcker är filtrerat på Önskade.",
+      "enrichersHeading": "Berikare",
+      "enrichersHint": "De här leverantörerna fyller i det primärleverantören lämnar tomt. Avmarkera en så slutar Bindery att fråga den. Det ger färre förfrågningar men mindre ifyllnad: DNB levererar också omslag genom sin omslagstjänst, och Hardcover levererar också kurerade genrer, serier och språkuppgifter om utgåvor. Gäller från nästa uppslag, utan omstart.",
+      "enricherPrimaryNote": "Det här är den primära leverantören, så den kan inte stängas av.",
+      "enricherOpenlibraryLabel": "OpenLibrary",
+      "enricherOpenlibraryHint": "Beskrivningar, omslag och ämnen.",
+      "enricherHardcoverLabel": "Hardcover",
+      "enricherHardcoverHint": "Betyg, kurerade genrer och serier. Overksam tills en API-nyckel är sparad.",
+      "enricherGooglebooksLabel": "Google Books",
+      "enricherGooglebooksHint": "Beskrivningar och omslag. Används bara när en Google Books API-nyckel är sparad.",
+      "enricherDnbLabel": "DNB (Tysklands nationalbibliotek)",
+      "enricherDnbHint": "Tyskspråkiga uppgifter och omslag. Säkert att stänga av om du inte läser tyska.",
+      "audiobookSourcesHeading": "Ljudbokskällor",
+      "audibleLabel": "Audible-katalogen",
+      "audibleHint": "Lägger till ljudböcker i en författares katalog. Använder en opublicerad Amazon-slutpunkt, inte ett dokumenterat API.",
+      "audnexHint": "Uppläsare, speltid och omslag för ljudböcker. En gemenskapsproxy över samma Audible-data."
     },
     "import": {
       "csvHeading": "CSV med författarnamn",

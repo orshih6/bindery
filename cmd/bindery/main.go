@@ -310,6 +310,7 @@ func main() {
 	bootProviders.log("metadata providers configured")
 	metaAgg := metadata.NewAggregator(bootProviders.primary, bootProviders.enrichers...)
 	metaAgg.SetAuthorEnrichers(bootProviders.authorEnrichers...)
+	metaAgg.SetAudiobookSourcesDisabled(bootProviders.audibleOff, bootProviders.audnexOff)
 
 	// Optional CLI subcommand: `bindery migrate {csv,readarr} <path>`.
 	// Runs the import and exits; does not start the HTTP server. Useful

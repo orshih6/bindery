@@ -19,7 +19,7 @@ import (
 // book has audiobook audio (MediaType=audiobook or both) and a known ASIN.
 // No-op otherwise.
 func (a *aggregatorCore) EnrichAudiobook(ctx context.Context, book *models.Book) error {
-	if book == nil || book.ASIN == "" {
+	if book == nil || book.ASIN == "" || a == nil || a.audnexOff {
 		return nil
 	}
 	if book.MediaType != models.MediaTypeAudiobook && book.MediaType != models.MediaTypeBoth {
@@ -55,7 +55,7 @@ func (a *aggregatorCore) EnrichAudiobook(ctx context.Context, book *models.Book)
 // match is ambiguous.
 func (a *aggregatorCore) GetCanonicalBookByASIN(ctx context.Context, asin string) (*models.Book, error) {
 	asin = normalizeASIN(asin)
-	if a == nil || a.primary == nil || asin == "" {
+	if a == nil || a.primary == nil || asin == "" || a.audnexOff {
 		return nil, nil
 	}
 	// Scoped and copied like the ISBN lookup (#2869): an answer built under one
@@ -98,7 +98,7 @@ func (a *aggregatorCore) GetCanonicalBookByASIN(ctx context.Context, asin string
 
 func (a *aggregatorCore) getAudnexBookByASIN(ctx context.Context, asin string) (*audnex.Book, error) {
 	asin = normalizeASIN(asin)
-	if a == nil || a.audnex == nil || asin == "" {
+	if a == nil || a.audnex == nil || a.audnexOff || asin == "" {
 		return nil, nil
 	}
 	key := "audnex-asin:" + asin
@@ -200,7 +200,7 @@ type audibleCatalogue interface {
 // aggregators) rather than nil-derefing. Errors propagate so the caller
 // can log them without failing the broader ingestion.
 func (a *aggregatorCore) GetAuthorAudiobooks(ctx context.Context, authorName string) ([]models.Book, error) {
-	if a.audible == nil {
+	if a.audible == nil || a.audibleOff {
 		return nil, nil
 	}
 	authorName = strings.TrimSpace(authorName)

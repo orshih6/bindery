@@ -1368,7 +1368,22 @@
       "rotateSessionSecretAcknowledge": "Jeg forstår at en ny rotasjon vil logge ut alle.",
       "defaultMediaTypeHint": "Brukes for nye forfattere, og for bøker du legger til enkeltvis, når ingenting er valgt eksplisitt. Eksisterende oppføringer påvirkes ikke: endre forfattere med massehandlingen på Forfattere-siden, og bøker fra Bøker-siden med Angi e-bok, Angi lydbok eller Angi begge, som også dekker de ønskede bøkene dine når Bøker er filtrert på Ønsket.",
       "authorWikidataLabel": "Forfatterbilder og biografier fra Wikidata",
-      "authorWikidataHint": "Fyller inn manglende bilde og biografi for en forfatter fra Wikimedia Commons og Wikipedia, funnet på Wikidata via forfatterens autoritets-ID fra biblioteket (NORAF, GND, BnF eller OpenLibrary), aldri via navn. Oppslagene følger den daglige forfatteroppdateringen, og hvert bilde og hver biografi krediteres på forfatterens side. Så lenge dette er av, sendes ingen forespørsler til Wikimedia."
+      "authorWikidataHint": "Fyller inn manglende bilde og biografi for en forfatter fra Wikimedia Commons og Wikipedia, funnet på Wikidata via forfatterens autoritets-ID fra biblioteket (NORAF, GND, BnF eller OpenLibrary), aldri via navn. Oppslagene følger den daglige forfatteroppdateringen, og hvert bilde og hver biografi krediteres på forfatterens side. Så lenge dette er av, sendes ingen forespørsler til Wikimedia.",
+      "enrichersHeading": "Berikere",
+      "enrichersHint": "Disse leverandørene fyller inn det primærleverandøren lar stå tomt. Fjern haken for en av dem, så slutter Bindery å spørre den. Det gir færre forespørsler, men mindre utfylling: DNB leverer også omslag gjennom sin omslagstjeneste, og Hardcover leverer også kuraterte sjangere, serier og språkopplysninger om utgaver. Gjelder fra neste oppslag, uten omstart.",
+      "enricherPrimaryNote": "Dette er primærleverandøren, så den kan ikke slås av.",
+      "enricherOpenlibraryLabel": "OpenLibrary",
+      "enricherOpenlibraryHint": "Beskrivelser, omslag og emner.",
+      "enricherHardcoverLabel": "Hardcover",
+      "enricherHardcoverHint": "Vurderinger, kuraterte sjangere og serier. Ubrukt til en API-nøkkel er lagret.",
+      "enricherGooglebooksLabel": "Google Books",
+      "enricherGooglebooksHint": "Beskrivelser og omslag. Brukes bare når en Google Books API-nøkkel er lagret.",
+      "enricherDnbLabel": "DNB (Tysklands nasjonalbibliotek)",
+      "enricherDnbHint": "Tyskspråklige detaljer og omslag. Trygt å slå av hvis du ikke leser tysk.",
+      "audiobookSourcesHeading": "Lydbokkilder",
+      "audibleLabel": "Audible-katalogen",
+      "audibleHint": "Legger lydbøker til en forfatters katalog. Bruker et ikke offentliggjort Amazon-endepunkt, ikke et dokumentert API.",
+      "audnexHint": "Innleser, spilletid og omslag for lydbøker. En fellesskapsproxy over de samme Audible-dataene."
     },
     "import": {
       "csvHeading": "CSV med forfatternavn",

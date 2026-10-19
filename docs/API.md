@@ -1380,8 +1380,19 @@ unset key:
 `hardcover`. `nb` and `bnf` are queried only while selected: an instance that
 never selects them never contacts either library.
 
-A `PUT` (or `DELETE`) of `metadata.primary_provider`, `googlebooks.apiKey`,
-`google_books_api_key`, `hardcover.api_token` or
+`metadata.enrichers_disabled` (#1890, #2015, admin only) is a comma separated
+list of sources to turn off, empty by default. It accepts `openlibrary`,
+`hardcover`, `googlebooks` and `dnb`, which are the enrichers, plus `audible`
+and `audnex`, the two audiobook sources. Names are trimmed, lowercased and
+deduplicated on write, and a name outside that list is refused with `400`. The
+primary provider is never turned off: naming it is ignored for as long as it is
+primary. `nb` and `bnf` are not accepted, since they are only ever queried as
+primary. A disabled source is sent no request. Turning off DNB also drops its
+cover lookup, and turning off Hardcover removes it as an enricher only; the
+separate enhanced Hardcover series setting is unchanged.
+
+A `PUT` (or `DELETE`) of `metadata.primary_provider`, `metadata.enrichers_disabled`,
+`googlebooks.apiKey`, `google_books_api_key`, `hardcover.api_token` or
 `metadata.author_enrichment.wikidata` (#3287) rebuilds the metadata providers
 before it answers, so the next lookup already uses the new set, with no restart
 (#1771). The `PUT` response for those keys carries an extra boolean:
