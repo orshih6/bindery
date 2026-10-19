@@ -352,6 +352,32 @@ GET    /api/v1/book/{id}/file                     download the imported file (au
 GET    /api/v1/book/{id}/calibre                  where the book stands in the Calibre delivery queue (see Calibre below)
 ```
 
+`POST /book/{id}/search` answers
+`{"results": [...], "filtered": [...], "filteredTotal": N, "debug": {...}}`
+(#2334).
+
+* `results` are the releases that passed the filters. Each carries `approved`
+  and, when it is not approved, a `rejection` reason from the blocklist,
+  already imported and allowed formats checks. Every one of them can still be
+  grabbed.
+* `filtered` are the releases the title and author relevance filter and the
+  language filter removed. Each has the same fields as a `results` item, with
+  `approved: false` and `rejection` holding the filter's reason. They are not
+  run through the blocklist, already imported or allowed formats checks. They
+  grab like any other release: post the `guid`, `title`, `nzbUrl`, `indexerId`
+  and `bookId` to `POST /queue/grab`, and the server uses the download URL it
+  recorded for that `guid`, for admin sessions and user accounts alike. Releases
+  that are not books (video, a movie or console category, a raw usenet posting
+  or a chapter fragment) are never in `filtered`; they show in
+  `debug.filters` only.
+* `filteredTotal` is how many the filters removed. `filtered` holds at most 100
+  of them, the likeliest matches first (for a dual-format book, alternating between the two formats), so `filteredTotal` can be larger than
+  `filtered.length`.
+
+Clients written before this ignore the two new keys and see no change. Automatic
+searches never see a filtered release. The free text search
+(`GET /indexer/search`) does not return `filtered`.
+
 Each book carries `averageRating` (community rating, 0 when the provider has none)
 and `ratingsCount` (#3124). `GET /book?sort=` also accepts `rating-desc` and
 `rating-asc`; unrated books sort last in both directions, and `rating-desc` breaks
