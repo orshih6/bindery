@@ -389,6 +389,7 @@ same two fields.
 ```
 GET    /api/v1/series                             list series with their linked books
 GET    /api/v1/series/{id}                        one series
+POST   /api/v1/series                             create a series (admin): {"title":"Saga"} makes a plain one; add a "hardcover" object (the fields of a `GET /series/hardcover/search` result: foreignId, providerId, slug, title, authorName, bookCount) to create it already linked, with title then optional (it defaults to the Hardcover title). Answers 201 with the series and its hardcoverLink; 409 {error, seriesId} when that Hardcover series is already in the library (nothing is created, and no Hardcover call is made); 400 for a foreignId that is not `hc-series:<digits>` or for oversized fields; 404 when enhanced Hardcover is off or Hardcover has no such series; 502 when Hardcover cannot be reached (nothing is created). No books are added
 POST   /api/v1/series/{id}/fill                   add the series' missing books as wanted (admin); answers {queued, skippedByProfile, skippedSplitParts}
 POST   /api/v1/series/{id}/split-parts/unmonitor  unmonitor the split edition parts of books already in the series, listed as splitEditionPartBookIds on the series (admin); answers {unmonitored}
 PATCH  /api/v1/series/{id}                        monitor / unmonitor (admin)
@@ -1373,6 +1374,45 @@ and gives up after 8 attempts.
 The delivery queue is not per user: it is the install's one Calibre target,
 and every route here is as privileged as an admin reading the queue.
 
+### Readarr and CSV import (admin)
+
+```
+POST   /api/v1/migrate/readarr                    upload readarr.db (multipart "file"); 202 with the status below, 409 if one is running
+GET    /api/v1/migrate/readarr/status             poll the import and its catalogue backfill
+POST   /api/v1/migrate/csv                        upload a CSV of author names; answers when the names are added
+```
+
+The Readarr import runs in the background, in two phases. First the database
+import (`running`), then a catalogue backfill that fetches each added author's
+books at about 3 seconds per author, two at a time at most. The backfill
+outlives the import, so `running` goes `false` while `catalogueRunning` is still
+`true`. A client that wants the whole job keeps polling until both are `false`.
+
+```json
+{
+  "running": false,
+  "startedAt": "2026-10-18T12:00:00Z",
+  "finishedAt": "2026-10-18T12:01:10Z",
+  "message": "import complete",
+  "error": "",
+  "result": { "authors": { "requested": 500, "added": 480 }, "indexers": {}, "downloadClients": {}, "blocklist": {} },
+  "catalogueRunning": true,
+  "catalogueTotal": 480,
+  "catalogueDone": 112
+}
+```
+
+`message`, `error`, `finishedAt` and `result` are left out when empty. The three
+`catalogue*` fields are always present. A failed fetch counts as done, so
+`catalogueDone` reaches `catalogueTotal`. The counters stay readable after the
+backfill ends, reset when the next import starts (unless a backfill is still
+running, in which case the new authors are added to its total), and live in
+memory only: a restart sets them back to `false`, `0`, `0`. An older server
+leaves them out, which clients should read as no backfill.
+
+The CSV upload has no status endpoint. Its catalogue backfill runs the same way
+but is not reported.
+
 ### Settings
 
 ```
@@ -1406,8 +1446,19 @@ unset key:
 `hardcover`. `nb` and `bnf` are queried only while selected: an instance that
 never selects them never contacts either library.
 
-A `PUT` (or `DELETE`) of `metadata.primary_provider`, `googlebooks.apiKey`,
-`google_books_api_key`, `hardcover.api_token` or
+`metadata.enrichers_disabled` (#1890, #2015, admin only) is a comma separated
+list of sources to turn off, empty by default. It accepts `openlibrary`,
+`hardcover`, `googlebooks` and `dnb`, which are the enrichers, plus `audible`
+and `audnex`, the two audiobook sources. Names are trimmed, lowercased and
+deduplicated on write, and a name outside that list is refused with `400`. The
+primary provider is never turned off: naming it is ignored for as long as it is
+primary. `nb` and `bnf` are not accepted, since they are only ever queried as
+primary. A disabled source is sent no request. Turning off DNB also drops its
+cover lookup, and turning off Hardcover removes it as an enricher only; the
+separate enhanced Hardcover series setting is unchanged.
+
+A `PUT` (or `DELETE`) of `metadata.primary_provider`, `metadata.enrichers_disabled`,
+`googlebooks.apiKey`, `google_books_api_key`, `hardcover.api_token` or
 `metadata.author_enrichment.wikidata` (#3287) rebuilds the metadata providers
 before it answers, so the next lookup already uses the new set, with no restart
 (#1771). The `PUT` response for those keys carries an extra boolean:

@@ -7,6 +7,7 @@ import { foldedIncludes } from '../util/foldForSearch'
 import AddSeriesBookModal from '../components/AddSeriesBookModal'
 import HardcoverSeriesLinkModal from '../components/HardcoverSeriesLinkModal'
 import SeriesNameModal from '../components/SeriesNameModal'
+import HardcoverSeriesAddSearch from '../components/HardcoverSeriesAddSearch'
 import MergeSeriesModal from '../components/MergeSeriesModal'
 import { btn, btnSize, primaryFill } from '../components/buttons'
 import { useIsAdmin } from '../auth/AuthContext'
@@ -124,6 +125,38 @@ export default function SeriesPage() {
     await refreshSeriesList()
     setExpanded(series.id)
     setShowAddSeries(false)
+  }
+
+  // A series picked from a Hardcover search arrives already linked: open it and
+  // load its diff so the missing books can be added one by one. Nothing is
+  // added automatically (#1706).
+  // A title search or filter that hides the series just created or opened
+  // would make the add look like it did nothing, so both are cleared first.
+  const revealSeries = () => {
+    setSearch('')
+    const params = new URLSearchParams(searchParams)
+    params.delete('filter')
+    params.delete('size')
+    setSearchParams(params, { replace: true })
+  }
+
+  const handleCreatedFromHardcover = async (series: Series) => {
+    await refreshSeriesList()
+    revealSeries()
+    setExpanded(series.id)
+    setShowAddSeries(false)
+    void loadHardcoverDiff(series, true)
+  }
+
+  // The picked Hardcover series is already in the library: open that one.
+  const handleHardcoverAlreadyAdded = async (seriesId: number) => {
+    const list = await refreshSeriesList()
+    revealSeries()
+    setExpanded(seriesId)
+    setShowAddSeries(false)
+    setLinkResult(prev => ({ ...prev, [seriesId]: t('series.addFromHardcover.alreadyAdded') }))
+    const existing = list.find(s => s.id === seriesId)
+    if (existing) void loadHardcoverDiff(existing)
   }
 
   const handleRenameSeries = async (title: string) => {
@@ -831,6 +864,12 @@ export default function SeriesPage() {
           submitLabel={t('series.addSeries')}
           onClose={() => setShowAddSeries(false)}
           onSubmit={handleCreateSeries}
+          beforeName={enhancedHardcoverApi ? (
+            <HardcoverSeriesAddSearch
+              onCreated={handleCreatedFromHardcover}
+              onExisting={handleHardcoverAlreadyAdded}
+            />
+          ) : undefined}
         />
       )}
       {editingSeries && (

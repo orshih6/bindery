@@ -89,6 +89,61 @@ const SettingMetadataPrimaryProvider = "metadata.primary_provider"
 // Wikimedia nothing.
 const SettingMetadataAuthorWikidata = "metadata.author_enrichment.wikidata"
 
+// SettingMetadataEnrichersDisabled lists the metadata enrichers an operator
+// has turned off (#1890): a comma separated list of names from
+// MetadataEnrichers, plus the audiobook sources "audible" and "audnex"
+// (#2015), which are not enrichers but are switched the same way. Empty, the default, leaves every enricher on. The
+// primary provider is never switched off by it: a name that matches the
+// current primary is ignored, so changing the primary cannot leave an install
+// with no metadata source.
+const SettingMetadataEnrichersDisabled = "metadata.enrichers_disabled"
+
+// MetadataEnrichers lists the providers that run as enrichers and so may be
+// named in SettingMetadataEnrichersDisabled, in the order the UI presents
+// them. Nasjonalbiblioteket and BnF are not here: they are only ever queried
+// as the primary.
+var MetadataEnrichers = []string{"openlibrary", "hardcover", "googlebooks", "dnb"}
+
+// ParseMetadataEnrichersDisabled splits a stored
+// SettingMetadataEnrichersDisabled value into trimmed, lowercased, deduplicated
+// names in the order given. Names are not checked here; see
+// IsMetadataSourceToggleName.
+func ParseMetadataEnrichersDisabled(value string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.Split(value, ",") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	return out
+}
+
+// MetadataAudiobookSources lists the two audiobook sources that are not
+// enrichers but can be named in SettingMetadataEnrichersDisabled (#2015):
+// the Audible catalogue and the audnex lookup.
+var MetadataAudiobookSources = []string{"audible", "audnex"}
+
+// MetadataSourceToggles is every name SettingMetadataEnrichersDisabled
+// accepts: the enrichers, then the audiobook sources.
+func MetadataSourceToggles() []string {
+	return append(append([]string(nil), MetadataEnrichers...), MetadataAudiobookSources...)
+}
+
+// IsMetadataSourceToggleName reports whether name may appear in
+// SettingMetadataEnrichersDisabled.
+func IsMetadataSourceToggleName(name string) bool {
+	for _, p := range MetadataSourceToggles() {
+		if name == p {
+			return true
+		}
+	}
+	return false
+}
+
 // MetadataPrimaryProviders lists the accepted values of
 // SettingMetadataPrimaryProvider, in the order the UI presents them. The first
 // entry is the default used when the setting is empty or unset.
@@ -736,6 +791,9 @@ func normalizeSettingValue(key, value string) string {
 	if key == SettingHardcoverAPIToken {
 		return hardcover.NormalizeAPIToken(value)
 	}
+	if key == SettingMetadataEnrichersDisabled {
+		return strings.Join(ParseMetadataEnrichersDisabled(value), ",")
+	}
 	return value
 }
 
@@ -1030,6 +1088,14 @@ func validateSettingValue(key, value string) error {
 		// this pure validator can't see — Set() enforces that separately.
 		if !IsMetadataPrimaryProviderValid(value) {
 			return fmt.Errorf("metadata.primary_provider %q is not one of: %s", value, strings.Join(MetadataPrimaryProviders, ", "))
+		}
+	case SettingMetadataEnrichersDisabled:
+		// Unknown names are refused rather than dropped, like an unknown
+		// primary provider, so a typo does not look saved and do nothing.
+		for _, name := range ParseMetadataEnrichersDisabled(value) {
+			if !IsMetadataSourceToggleName(name) {
+				return fmt.Errorf("%s: %q is not one of: %s", key, name, strings.Join(MetadataSourceToggles(), ", "))
+			}
 		}
 	case SettingCalibrePushPathRemap:
 		if value == "" {
