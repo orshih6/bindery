@@ -94,13 +94,17 @@ func TestDBIntegrityCheck_RealDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	rec := postIntegrity(context.Background(), NewDBIntegrityHandler(database, ""))
-	var got dbIntegrityResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Total != 1 || len(got.Relationships) != 1 || got.Relationships[0].ChildTable != "book_files" {
-		t.Fatalf("got %+v", got)
+	// ":memory:" and "file:" paths cannot be reopened, so they must use the
+	// shared connection rather than scanning a fresh empty database.
+	for _, path := range []string{"", ":memory:", "file:x.db"} {
+		rec := postIntegrity(context.Background(), NewDBIntegrityHandler(database, path))
+		var got dbIntegrityResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Total != 1 || len(got.Relationships) != 1 || got.Relationships[0].ChildTable != "book_files" {
+			t.Fatalf("path %q: got %+v", path, got)
+		}
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,13 +42,13 @@ type DBIntegrityHandler struct {
 }
 
 // NewDBIntegrityHandler builds the handler. dbPath is the database file; with
-// an empty path (tests and in-memory databases, which cannot be reopened from
-// a path) the scan falls back to the shared connection, accepting that it
+// an empty, ":memory:" or "file:" path (tests and in-memory databases, which
+// cannot be reopened from a path) the scan falls back to the shared connection, accepting that it
 // then blocks the pool for its duration.
 func NewDBIntegrityHandler(database *sql.DB, dbPath string) *DBIntegrityHandler {
 	h := &DBIntegrityHandler{timeout: dbIntegrityTimeout, now: time.Now}
 	h.scan = func(ctx context.Context) ([]db.ForeignKeyDrift, error) {
-		if dbPath != "" {
+		if dbPath != "" && dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file:") {
 			return db.ForeignKeyDriftReportAt(ctx, dbPath, h.hook)
 		}
 		return db.ForeignKeyDriftReport(ctx, database, h.hook)
