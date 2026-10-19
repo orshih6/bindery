@@ -58,8 +58,11 @@ const dbCleanupBackupLabel = "pre-fk-cleanup"
 type DBIntegrityHandler struct {
 	// scan, repair and backup are set by the constructor; tests swap them to
 	// hold a step open, make it slow or make it fail.
-	scan    func(ctx context.Context) ([]db.ForeignKeyDrift, error)
-	repair  func(ctx context.Context) (db.RepairReport, error)
+	scan   func(ctx context.Context) ([]db.ForeignKeyDrift, error)
+	repair func(ctx context.Context) (db.RepairReport, error)
+	// fixable counts, per relationship, the rows a repair can resolve. Nil
+	// means every row of a CASCADE or SET NULL relationship.
+	fixable func(ctx context.Context, found []db.ForeignKeyDrift) ([]int, error)
 	backup  func(ctx context.Context) (BackupSnapshot, error)
 	timeout time.Duration
 	// cleanupTimeout bounds one cleanup.
@@ -104,6 +107,15 @@ func NewDBIntegrityHandler(database *sql.DB, dbPath string, backups *BackupHandl
 			return db.ForeignKeyDriftReportAt(ctx, dbPath, h.hook)
 		}
 		return db.ForeignKeyDriftReport(ctx, database, h.hook)
+	}
+	h.fixable = func(ctx context.Context, found []db.ForeignKeyDrift) ([]int, error) {
+		if db.IsReopenablePath(dbPath) {
+			return db.ForeignKeyDriftFixableAt(ctx, dbPath, found)
+		}
+		if database == nil {
+			return nil, nil // nothing to ask: every CASCADE or SET NULL row counts
+		}
+		return db.ForeignKeyDriftFixable(ctx, database, found)
 	}
 	h.repair = func(ctx context.Context) (db.RepairReport, error) {
 		return db.RepairForeignKeyDrift(ctx, database, db.RepairOptions{
@@ -193,8 +205,14 @@ func (h *DBIntegrityHandler) Check(w http.ResponseWriter, r *http.Request) {
 type dbCleanupRelationship struct {
 	dbIntegrityRelationship
 	// Action is "delete" (remove the rows), "clear" (clear the reference, keep
-	// the rows) or "keep" (reported and left alone).
+	// the rows), "keep" (the schema gives no safe rule, reported and left
+	// alone) or "skipped" (the schema has a rule but no row of this
+	// relationship can be repaired automatically).
 	Action string `json:"action"`
+	// Fixable is how many of Violations a cleanup can resolve. Less than
+	// Violations when some rows cannot be addressed (a WITHOUT ROWID table) or
+	// do not pass the repair's own orphan test; those are skipped.
+	Fixable int `json:"fixable"`
 }
 
 type dbCleanupPreviewResponse struct {
@@ -211,23 +229,39 @@ type dbCleanupPreviewResponse struct {
 	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
 }
 
-func cleanupRelationships(found []db.ForeignKeyDrift) ([]dbCleanupRelationship, int, int, int) {
+// dbActionSkipped marks a relationship whose rows a cleanup cannot repair
+// although the schema declares a rule for them.
+const dbActionSkipped = "skipped"
+
+// cleanupRelationships classifies a scan. counts, when given, holds per
+// relationship how many rows are really repairable (db.ForeignKeyDriftFixable);
+// without it every row of a relationship with a CASCADE or SET NULL rule counts
+// as repairable.
+func cleanupRelationships(found []db.ForeignKeyDrift, counts []int) ([]dbCleanupRelationship, int, int, int) {
 	out := make([]dbCleanupRelationship, 0, len(found))
 	var total, fixable, unfixable int
-	for _, d := range found {
+	for i, d := range found {
 		act := db.DriftAction(d.OnDelete)
+		fix := 0
+		if act != db.DriftActionKeep {
+			fix = d.Violations
+			if counts != nil && i < len(counts) {
+				fix = min(counts[i], d.Violations)
+			}
+			if fix == 0 {
+				act = dbActionSkipped
+			}
+		}
 		out = append(out, dbCleanupRelationship{
 			dbIntegrityRelationship: dbIntegrityRelationship{
 				ChildTable: d.ChildTable, ParentTable: d.ParentTable, OnDelete: d.OnDelete, Violations: d.Violations,
 			},
-			Action: act,
+			Action:  act,
+			Fixable: fix,
 		})
 		total += d.Violations
-		if act == db.DriftActionKeep {
-			unfixable += d.Violations
-		} else {
-			fixable += d.Violations
-		}
+		fixable += fix
+		unfixable += d.Violations - fix
 	}
 	return out, total, fixable, unfixable
 }
@@ -326,7 +360,15 @@ func (h *DBIntegrityHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rels, total, fixable, unfixable := cleanupRelationships(found)
+	var counts []int
+	if h.fixable != nil {
+		var err error
+		if counts, err = h.fixable(ctx, found); err != nil {
+			scanFailed(w, r, ctx, err, "check", nil)
+			return
+		}
+	}
+	rels, total, fixable, unfixable := cleanupRelationships(found, counts)
 	now := h.now().UTC()
 	resp := dbCleanupPreviewResponse{
 		Relationships: rels, Total: total, Fixable: fixable, Unfixable: unfixable, CheckedAt: now,
@@ -428,7 +470,7 @@ func (h *DBIntegrityHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "the database changed since the preview; preview again"})
 		return
 	}
-	_, totalBefore, fixable, _ := cleanupRelationships(before)
+	_, totalBefore, fixable, _ := cleanupRelationships(before, nil)
 	if fixable == 0 {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "there is nothing a cleanup can fix"})
 		return
@@ -447,9 +489,16 @@ func (h *DBIntegrityHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 
 	report, err := h.repair(ctx)
 	if err != nil {
-		slog.Error("audit: database drift cleanup failed",
-			"event", "db_drift_cleanup", "stage", "failed", "user_id", uid, "backup", snap.Name,
-			"deleted", report.Deleted, "cleared", report.Nulled, "error", err)
+		if r.Context().Err() != nil {
+			// The client went away: a stop, not a failure.
+			slog.Info("audit: database drift cleanup cancelled",
+				"event", "db_drift_cleanup", "stage", "cancelled", "user_id", uid, "backup", snap.Name,
+				"deleted", report.Deleted, "cleared", report.Nulled)
+		} else {
+			slog.Error("audit: database drift cleanup failed",
+				"event", "db_drift_cleanup", "stage", "failed", "user_id", uid, "backup", snap.Name,
+				"deleted", report.Deleted, "cleared", report.Nulled, "error", err)
+		}
 		scanFailed(w, r, ctx, err, "cleanup", map[string]string{"backupPath": snap.Path})
 		return
 	}
@@ -469,7 +518,14 @@ func (h *DBIntegrityHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 	defer vcancel()
 	after, err := h.scan(vctx)
 	if err == nil {
-		resp.Remaining, resp.RemainingTotal, _, _ = cleanupRelationships(after)
+		resp.Remaining, resp.RemainingTotal, _, _ = cleanupRelationships(after, nil)
+		// Anything still here after a repair was not repaired: whatever the
+		// schema says about it, it was left as it is.
+		for i := range resp.Remaining {
+			if resp.Remaining[i].Action != db.DriftActionKeep {
+				resp.Remaining[i].Action = dbActionSkipped
+			}
+		}
 		resp.Verified = true
 	} else {
 		slog.Warn("database drift cleanup could not run its verifying scan", "error", err)

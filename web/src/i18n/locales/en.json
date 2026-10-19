@@ -1590,6 +1590,8 @@
       "dbCleanupActionDelete": "Delete the rows",
       "dbCleanupActionClear": "Clear the reference, keep the rows",
       "dbCleanupActionKeep": "Leave alone",
+      "dbCleanupActionSkipped": "Cannot be repaired automatically, left as they are",
+      "dbCleanupPartial": "{{count}} of these cannot be repaired automatically and will be left as they are.",
       "dbCleanupSummary": "Rows that would be deleted or have their reference cleared: {{fixable}}. Rows that would be left alone: {{unfixable}}.",
       "dbCleanupCascadeNote": "Deleting a row also deletes whatever hangs off it, the same as if its parent had been deleted properly. The numbers above do not include those rows.",
       "dbCleanupBackupNote": "Before anything changes, Bindery saves a backup of the database in its backups folder and tells you where it is. If the backup cannot be made, nothing is changed.",

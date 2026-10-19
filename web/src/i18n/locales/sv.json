@@ -1322,6 +1322,8 @@
       "dbCleanupActionDelete": "Ta bort raderna",
       "dbCleanupActionClear": "Rensa referensen, behåll raderna",
       "dbCleanupActionKeep": "Lämna kvar",
+      "dbCleanupActionSkipped": "Kan inte repareras automatiskt, lämnas som de är",
+      "dbCleanupPartial": "{{count}} av dessa kan inte repareras automatiskt och lämnas som de är.",
       "dbCleanupSummary": "Rader som tas bort eller får referensen rensad: {{fixable}}. Rader som lämnas kvar: {{unfixable}}.",
       "dbCleanupCascadeNote": "När en rad tas bort tas också det som hänger under den bort, precis som om föräldern hade tagits bort på rätt sätt. Siffrorna ovan räknar inte med de raderna.",
       "dbCleanupBackupNote": "Innan något ändras sparar Bindery en säkerhetskopia av databasen i mappen för säkerhetskopior och talar om var den finns. Om säkerhetskopian inte kan skapas ändras ingenting.",

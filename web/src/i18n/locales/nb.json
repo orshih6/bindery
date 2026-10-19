@@ -1334,6 +1334,8 @@
       "dbCleanupActionDelete": "Slett radene",
       "dbCleanupActionClear": "Fjern referansen, behold radene",
       "dbCleanupActionKeep": "La stå",
+      "dbCleanupActionSkipped": "Kan ikke repareres automatisk, blir stående som de er",
+      "dbCleanupPartial": "{{count}} av disse kan ikke repareres automatisk og blir stående som de er.",
       "dbCleanupSummary": "Rader som slettes eller får fjernet referansen: {{fixable}}. Rader som får stå: {{unfixable}}.",
       "dbCleanupCascadeNote": "Når en rad slettes, slettes også det som henger under den, akkurat som om forelderen var slettet på riktig måte. Tallene over inkluderer ikke disse radene.",
       "dbCleanupBackupNote": "Før noe endres, lagrer Bindery en sikkerhetskopi av databasen i mappen for sikkerhetskopier og forteller deg hvor den ligger. Hvis sikkerhetskopien ikke kan lages, endres ingenting.",

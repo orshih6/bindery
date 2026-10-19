@@ -384,6 +384,10 @@ func (r *repairer) apply(ctx context.Context, ex fkExecer, v ForeignKeyViolation
 		res, err := ex.ExecContext(ctx,
 			fmt.Sprintf(`DELETE FROM %s WHERE rowid = ? AND %s`, quoteIdent(v.Table), guard), v.RowID.Int64)
 		if err != nil {
+			if isConstraintError(err) {
+				r.skip(constraintSkipNote(v))
+				return nil
+			}
 			return fmt.Errorf("delete orphan %s rowid %d: %w", v.Table, v.RowID.Int64, err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
@@ -398,6 +402,10 @@ func (r *repairer) apply(ctx context.Context, ex fkExecer, v ForeignKeyViolation
 			fmt.Sprintf(`UPDATE %s SET %s WHERE rowid = ? AND %s`, quoteIdent(v.Table), strings.Join(sets, ", "), guard),
 			v.RowID.Int64)
 		if err != nil {
+			if isConstraintError(err) {
+				r.skip(constraintSkipNote(v))
+				return nil
+			}
 			return fmt.Errorf("clear dangling reference on %s rowid %d: %w", v.Table, v.RowID.Int64, err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
@@ -405,6 +413,19 @@ func (r *repairer) apply(ctx context.Context, ex fkExecer, v ForeignKeyViolation
 		}
 	}
 	return nil
+}
+
+// isConstraintError reports whether SQLite refused a statement on a constraint
+// (a RESTRICT child still pointing at the row, a NOT NULL column that SET NULL
+// would empty). SQLite undoes just that statement and leaves an enclosing
+// transaction usable, so one such row is a skip, not a reason to abandon the
+// batch: otherwise every rerun would stop at the same row.
+func isConstraintError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "constraint failed")
+}
+
+func constraintSkipNote(v ForeignKeyViolation) string {
+	return fmt.Sprintf("%s -> %s: a constraint refused the repair of at least one row, left as it is", v.Table, v.Parent)
 }
 
 // RepairForeignKeyViolations replays the ON DELETE action that never fired.

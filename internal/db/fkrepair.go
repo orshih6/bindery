@@ -168,3 +168,85 @@ func violationSource(ctx context.Context, database *sql.DB, path string) (func()
 		return v, true, nil
 	}, closeSrc, nil
 }
+
+// ForeignKeyDriftFixableAt reports, for each relationship in found (same
+// order), how many of its rows a repair can actually resolve, using its own
+// short lived read only connection like the scan does. The scan counts every
+// row foreign_key_check reports; a repair skips a row it cannot address (a
+// WITHOUT ROWID table) or whose orphan status it cannot confirm with the same
+// test it applies at repair time (a column affinity mismatch). The preview uses
+// this so it does not promise more than the repair will do.
+func ForeignKeyDriftFixableAt(ctx context.Context, path string, found []ForeignKeyDrift) ([]int, error) {
+	ro, err := sql.Open("sqlite", SQLiteFileURI(path, "mode=ro&_pragma=busy_timeout(5000)"))
+	if err != nil {
+		return nil, fmt.Errorf("open %q read-only: %w", path, err)
+	}
+	defer func() { _ = ro.Close() }()
+	ro.SetMaxOpenConns(1)
+	return driftFixable(ctx, ro, found)
+}
+
+// ForeignKeyDriftFixable is ForeignKeyDriftFixableAt on the given pool, for
+// databases that cannot be reopened from a path.
+func ForeignKeyDriftFixable(ctx context.Context, database *sql.DB, found []ForeignKeyDrift) ([]int, error) {
+	return driftFixable(ctx, database, found)
+}
+
+func driftFixable(ctx context.Context, q fkExecer, found []ForeignKeyDrift) ([]int, error) {
+	out := make([]int, len(found))
+	for i, d := range found {
+		if DriftAction(d.OnDelete) == DriftActionKeep {
+			continue
+		}
+		var withoutRowID int
+		if err := scanOne(ctx, q, `SELECT "wr" FROM pragma_table_list(?) WHERE "schema" = 'main'`, d.ChildTable, &withoutRowID); err != nil {
+			return nil, fmt.Errorf("table_list(%s): %w", d.ChildTable, err)
+		}
+		if withoutRowID != 0 {
+			continue
+		}
+		actions, err := foreignKeyActions(ctx, q, d.ChildTable)
+		if err != nil {
+			return nil, err
+		}
+		total := 0
+		for _, a := range actions {
+			if a.parent != d.ParentTable || !strings.EqualFold(a.onDelete, d.OnDelete) {
+				continue
+			}
+			guard, err := orphanGuard(ctx, q, d.ChildTable, a)
+			if err != nil {
+				continue // cannot be repaired, so not counted
+			}
+			var n int
+			if err := scanOne(ctx, q, fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`, quoteIdent(d.ChildTable), guard), "", &n); err != nil {
+				return nil, fmt.Errorf("count repairable %s: %w", d.ChildTable, err)
+			}
+			total += n
+		}
+		out[i] = min(total, d.Violations)
+	}
+	return out, nil
+}
+
+// scanOne runs a query returning one integer column. arg, when non empty, is
+// bound as the single parameter.
+func scanOne(ctx context.Context, q fkExecer, query, arg string, dest *int) error {
+	var rows *sql.Rows
+	var err error
+	if arg != "" {
+		rows, err = q.QueryContext(ctx, query, arg)
+	} else {
+		rows, err = q.QueryContext(ctx, query)
+	}
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		if err := rows.Scan(dest); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}

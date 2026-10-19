@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -238,6 +239,172 @@ func TestRepairForeignKeyDriftLeavesUnfixableRowsAlone(t *testing.T) {
 	} {
 		if got := DriftAction(in); got != want {
 			t.Errorf("DriftAction(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The same guard protects the SET NULL branch: a parent that came back after
+// the scan must keep its child's reference.
+func TestRepairDoesNotClearAReferenceWhoseParentCameBack(t *testing.T) {
+	database, _ := openRepairFixture(t, 0)
+	ctx := context.Background()
+	for _, s := range []string{
+		`PRAGMA foreign_keys = OFF`,
+		`INSERT INTO downloads (id, guid, book_id, title, nzb_url) VALUES (50, 'late', 4242, 'R', 'http://x')`,
+		`PRAGMA foreign_keys = ON`,
+	} {
+		if _, err := database.Exec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale, err := ForeignKeyViolations(ctx, database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{
+		`INSERT INTO authors (id, foreign_id, name, sort_name) VALUES (5, 'OL5A', 'N', 'N')`,
+		`INSERT INTO books (id, foreign_id, author_id, title, sort_title) VALUES (4242, 'OL4242W', 5, 'T', 'T')`,
+	} {
+		if _, err := database.Exec(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := RepairForeignKeyViolations(ctx, database, stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := countRows(t, database, `SELECT COUNT(*) FROM downloads WHERE id = 50 AND book_id = 4242`); got != 1 {
+		t.Error("the repair cleared the reference of a row whose parent exists again")
+	}
+	// The seeded download (parent still missing) was cleared, the late one was not.
+	if report.Nulled != 1 {
+		t.Errorf("nulled = %d, want only the one genuine orphan", report.Nulled)
+	}
+}
+
+// seedConstraintTraps adds rows the schema's rule cannot be applied to: a SET
+// NULL column that is NOT NULL, and a CASCADE row that something RESTRICTs.
+func seedConstraintTraps(t *testing.T, database *sql.DB) {
+	t.Helper()
+	for _, s := range []string{
+		`CREATE TABLE zz_parent (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE zz_nn (id INTEGER PRIMARY KEY, pid INTEGER NOT NULL REFERENCES zz_parent(id) ON DELETE SET NULL)`,
+		`CREATE TABLE zz_mid (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES zz_parent(id) ON DELETE CASCADE)`,
+		`CREATE TABLE zz_leaf (id INTEGER PRIMARY KEY, mid INTEGER REFERENCES zz_mid(id) ON DELETE RESTRICT)`,
+		`PRAGMA foreign_keys = OFF`,
+		`INSERT INTO zz_nn (id, pid) VALUES (1, 77)`,
+		`INSERT INTO zz_mid (id, pid) VALUES (1, 78)`,
+		`INSERT INTO zz_leaf (id, mid) VALUES (1, 1)`,
+		`PRAGMA foreign_keys = ON`,
+	} {
+		if _, err := database.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+}
+
+// One row a constraint refuses must not roll back its batch or make every
+// rerun fail at the same row: it is skipped with a note, and the rest of the
+// cleanup goes through.
+func TestRepairSkipsRowsAConstraintRefuses(t *testing.T) {
+	for _, mode := range []string{"batched", "cli"} {
+		t.Run(mode, func(t *testing.T) {
+			database, path := openRepairFixture(t, 3)
+			seedConstraintTraps(t, database)
+			ctx := context.Background()
+
+			run := func() RepairReport {
+				t.Helper()
+				if mode == "batched" {
+					r, err := RepairForeignKeyDrift(ctx, database, RepairOptions{Path: path, BatchSize: 100})
+					if err != nil {
+						t.Fatalf("repair stopped on a refused row: %v", err)
+					}
+					return r
+				}
+				v, err := ForeignKeyViolations(ctx, database)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r, err := RepairForeignKeyViolations(ctx, database, v)
+				if err != nil {
+					t.Fatalf("repair stopped on a refused row: %v", err)
+				}
+				return r
+			}
+			first := run()
+			if first.Skipped < 2 {
+				t.Errorf("skipped = %d, want both refused rows skipped", first.Skipped)
+			}
+			joined := strings.Join(first.SkipNotes, "|")
+			if !strings.Contains(joined, "zz_nn") || !strings.Contains(joined, "zz_mid") {
+				t.Errorf("skip notes %v do not name the refused tables", first.SkipNotes)
+			}
+			// The repairable rows in the same run were still repaired.
+			if first.Deleted == 0 {
+				t.Error("the rest of the cleanup did not proceed")
+			}
+			if got := countRows(t, database, `SELECT COUNT(*) FROM book_files WHERE book_id >= 1000`); got != 0 {
+				t.Errorf("%d repairable orphans left behind", got)
+			}
+			// The refused rows are untouched, and a rerun is clean, not an error.
+			if got := countRows(t, database, `SELECT COUNT(*) FROM zz_nn WHERE pid = 77`) + countRows(t, database, `SELECT COUNT(*) FROM zz_mid WHERE id = 1`); got != 2 {
+				t.Error("a refused row was modified")
+			}
+			second := run()
+			if second.Skipped < 2 {
+				t.Errorf("rerun skipped = %d, want the same rows skipped again", second.Skipped)
+			}
+		})
+	}
+}
+
+// The preview counts only rows a repair can resolve: a WITHOUT ROWID table
+// cannot be addressed by rowid, so its rows are reported but not fixable.
+func TestForeignKeyDriftFixableCountsWhatARepairCanDo(t *testing.T) {
+	database, path := openRepairFixture(t, 2)
+	for _, s := range []string{
+		`CREATE TABLE zz_parent (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE zz_wr (a INTEGER PRIMARY KEY, pid INTEGER REFERENCES zz_parent(id) ON DELETE CASCADE) WITHOUT ROWID`,
+		`PRAGMA foreign_keys = OFF`,
+		`INSERT INTO zz_wr (a, pid) VALUES (1, 9), (2, 9)`,
+		`PRAGMA foreign_keys = ON`,
+	} {
+		if _, err := database.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	ctx := context.Background()
+	found, err := ForeignKeyDriftReportAt(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, get := range map[string]func() ([]int, error){
+		"path": func() ([]int, error) { return ForeignKeyDriftFixableAt(ctx, path, found) },
+		"pool": func() ([]int, error) { return ForeignKeyDriftFixable(ctx, database, found) },
+	} {
+		counts, err := get()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(counts) != len(found) {
+			t.Fatalf("%s: %d counts for %d relationships", name, len(counts), len(found))
+		}
+		for i, d := range found {
+			switch d.ChildTable {
+			case "zz_wr":
+				if d.Violations != 2 || counts[i] != 0 {
+					t.Errorf("%s: zz_wr violations %d fixable %d, want 2 and 0", name, d.Violations, counts[i])
+				}
+			case "book_files":
+				if counts[i] != d.Violations || d.Violations == 0 {
+					t.Errorf("%s: book_files fixable %d of %d, want all", name, counts[i], d.Violations)
+				}
+			case "downloads":
+				if counts[i] != d.Violations {
+					t.Errorf("%s: downloads fixable %d of %d, want all", name, counts[i], d.Violations)
+				}
+			}
 		}
 	}
 }

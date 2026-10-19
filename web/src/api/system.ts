@@ -84,10 +84,15 @@ export interface DBIntegrityReport {
 
 /** What a cleanup does with a relationship's rows: remove them, clear the
  *  reference and keep the row, or leave them alone. */
-export type DBCleanupAction = 'delete' | 'clear' | 'keep'
+export type DBCleanupAction = 'delete' | 'clear' | 'keep' | 'skipped'
 
 export interface DBCleanupRelationship extends DBIntegrityRelationship {
+  /** 'skipped': the schema has a rule but none of these rows can be repaired
+   *  automatically, so a cleanup leaves them. After a cleanup, anything left
+   *  with a rule is shown as skipped. */
   action: DBCleanupAction
+  /** How many of `violations` a cleanup can resolve; fewer means the rest are skipped. */
+  fixable: number
 }
 
 /** Result of POST /system/db-integrity/cleanup/preview (#3357). Changes nothing.

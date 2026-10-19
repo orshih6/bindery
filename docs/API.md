@@ -1047,7 +1047,12 @@ changes nothing.
 
 `action` is `delete` (`ON DELETE CASCADE`: the rows are removed), `clear`
 (`ON DELETE SET NULL`: the reference is cleared and the row kept) or `keep`
-(anything else: reported and left alone). `previewToken` is absent when nothing
+(anything else: reported and left alone). Each relationship also carries
+`fixable`, how many of its `violations` a cleanup can really resolve. Rows it
+cannot address (a `WITHOUT ROWID` table) or cannot confirm as orphaned with the
+repair's own test are counted in `violations` but not in `fixable`, and a
+relationship with none repairable has `action` `skipped`. `fixable` and
+`unfixable` at the top level are the sums. `previewToken` is absent when nothing
 is fixable. It is signed with a key that exists only in the running process, so
 it expires when Bindery restarts, and after 15 minutes either way.
 
@@ -1081,11 +1086,19 @@ runs at a time, and a second request gets `409` straight away. Then, in order:
 }
 ```
 
+A row the database refuses to repair (a `NOT NULL` column that clearing would
+empty, a row something else still restricts) is skipped with a note in
+`skipNotes` and left as it is; it does not stop the rest of the cleanup, and a
+rerun does not fail on it. Whatever `remaining` lists after a cleanup was not
+repaired, so a relationship with a `CASCADE` or `SET NULL` rule shows `action`
+`skipped` there, and one with no rule shows `keep`.
+
 `verified` is false when the scan afterwards could not run, in which case
 `remaining` means nothing. A failure after the backup (`500`, or `504` when the
 15 minute limit is hit) answers with `backupPath` so the backup can be found; the
 body never carries the underlying error, which goes to the log. A client that
-disconnects stops the cleanup at the next batch boundary. Each batch is all or
+disconnects stops the cleanup at the next batch boundary and is logged at info
+as `cancelled`, not as a failure. Each batch is all or
 nothing but the cleanup as a whole is not: batches already committed stay, and
 running the cleanup again carries on, because every row is checked to still be
 an orphan before it is touched. Admins are named in the log (`audit: database

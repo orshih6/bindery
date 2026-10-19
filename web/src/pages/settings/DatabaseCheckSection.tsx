@@ -92,6 +92,7 @@ export default function DatabaseCheckSection() {
     switch (action) {
       case 'delete': return t('settings.general.dbCleanupActionDelete')
       case 'clear': return t('settings.general.dbCleanupActionClear')
+      case 'skipped': return t('settings.general.dbCleanupActionSkipped')
       default: return t('settings.general.dbCleanupActionKeep')
     }
   }
@@ -190,7 +191,14 @@ export default function DatabaseCheckSection() {
                         {r.onDelete && <span className="text-slate-500 dark:text-zinc-500"> ({r.onDelete})</span>}
                       </td>
                       <td className="py-1 pr-3 font-mono">{r.violations}</td>
-                      <td className="py-1">{actionLabel(r.action)}</td>
+                      <td className="py-1">
+                        {actionLabel(r.action)}
+                        {r.fixable > 0 && r.fixable < r.violations && (
+                          <span className="block text-slate-500 dark:text-zinc-500">
+                            {t('settings.general.dbCleanupPartial', { count: r.violations - r.fixable })}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

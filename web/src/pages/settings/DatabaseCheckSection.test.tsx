@@ -155,9 +155,9 @@ const preview: DBCleanupPreview = {
   previewToken: 'tok.abc.def',
   expiresAt: '2026-10-19T12:15:00Z',
   relationships: [
-    { childTable: 'authors', parentTable: 'users', onDelete: 'NO ACTION', violations: 1, action: 'keep' },
-    { childTable: 'book_files', parentTable: 'books', onDelete: 'CASCADE', violations: 4, action: 'delete' },
-    { childTable: 'downloads', parentTable: 'books', onDelete: 'SET NULL', violations: 2, action: 'clear' },
+    { childTable: 'authors', parentTable: 'users', onDelete: 'NO ACTION', violations: 1, action: 'keep', fixable: 0 },
+    { childTable: 'book_files', parentTable: 'books', onDelete: 'CASCADE', violations: 4, action: 'delete', fixable: 4 },
+    { childTable: 'downloads', parentTable: 'books', onDelete: 'SET NULL', violations: 2, action: 'clear', fixable: 2 },
   ],
 }
 
@@ -166,7 +166,7 @@ const done: DBCleanupResult = {
   cleared: 2,
   skipped: 1,
   skipNotes: ['authors -> users: ON DELETE NO ACTION, no safe automatic repair'],
-  remaining: [{ childTable: 'authors', parentTable: 'users', onDelete: 'NO ACTION', violations: 1, action: 'keep' }],
+  remaining: [{ childTable: 'authors', parentTable: 'users', onDelete: 'NO ACTION', violations: 1, action: 'keep', fixable: 0 }],
   remainingTotal: 1,
   verified: true,
   backupPath: '/config/backups/bindery_20261019_120000_pre-fk-cleanup.db',
@@ -228,8 +228,8 @@ describe('DatabaseCheckSection cleanup', () => {
   it('shows two foreign keys from one child to the same parent without a duplicate key warning', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const pair = [
-      { childTable: 'requests', parentTable: 'users', onDelete: 'CASCADE', violations: 2, action: 'delete' as const },
-      { childTable: 'requests', parentTable: 'users', onDelete: 'SET NULL', violations: 1, action: 'clear' as const },
+      { childTable: 'requests', parentTable: 'users', onDelete: 'CASCADE', violations: 2, action: 'delete' as const, fixable: 2 },
+      { childTable: 'requests', parentTable: 'users', onDelete: 'SET NULL', violations: 1, action: 'clear' as const, fixable: 1 },
     ]
     vi.mocked(api.previewDBCleanup).mockResolvedValue({ ...preview, relationships: pair })
     vi.mocked(api.cleanupDB).mockResolvedValue({ ...done, remainingTotal: 3, remaining: pair })
@@ -240,6 +240,24 @@ describe('DatabaseCheckSection cleanup', () => {
     expect(result.querySelectorAll('tbody tr')).toHaveLength(2)
     expect(errSpy.mock.calls.some(c => String(c[0]).includes('same key'))).toBe(false)
     errSpy.mockRestore()
+  })
+
+  it('does not overstate: shows rows that cannot be repaired and skipped relationships', async () => {
+    vi.mocked(api.previewDBCleanup).mockResolvedValue({
+      ...preview,
+      fixable: 1,
+      unfixable: 6,
+      relationships: [
+        { childTable: 'book_files', parentTable: 'books', onDelete: 'CASCADE', violations: 4, action: 'delete', fixable: 1 },
+        { childTable: 'downloads', parentTable: 'books', onDelete: 'SET NULL', violations: 2, action: 'skipped', fixable: 0 },
+      ],
+    })
+    await checkThenPreview()
+    const box = screen.getByTestId('db-cleanup-preview')
+    expect(box.textContent).toContain('settings.general.dbCleanupPartial {"count":3}')
+    expect(box.textContent).toContain('settings.general.dbCleanupActionSkipped')
+    // The skipped relationship has no partial note of its own (nothing is fixable in it).
+    expect(box.textContent?.match(/dbCleanupPartial/g)).toHaveLength(1)
   })
 
   it('cancel drops the preview without cleaning anything', async () => {

@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -464,6 +466,109 @@ func TestDBCleanupResponseSurvivesTheServerWriteTimeout(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d", resp.StatusCode)
 	}
+}
+
+// The preview does not promise more than the repair will do: rows it cannot
+// address or confirm are counted as not fixable, and a relationship with none
+// repairable is shown as skipped rather than "delete".
+func TestDBCleanupPreviewDoesNotOverstate(t *testing.T) {
+	s := newStubbed()
+	counts := []int{0, 1, 0} // authors (keep), book_files 1 of 4, downloads 0 of 2
+	s.h.fixable = func(context.Context, []db.ForeignKeyDrift) ([]int, error) { return counts, nil }
+	p := s.preview(t)
+	byTable := map[string]dbCleanupRelationship{}
+	for _, r := range p.Relationships {
+		byTable[r.ChildTable] = r
+	}
+	if r := byTable["book_files"]; r.Action != db.DriftActionDelete || r.Fixable != 1 || r.Violations != 4 {
+		t.Errorf("book_files = %+v, want delete with 1 of 4 fixable", r)
+	}
+	if r := byTable["downloads"]; r.Action != dbActionSkipped || r.Fixable != 0 {
+		t.Errorf("downloads = %+v, want skipped with none fixable", r)
+	}
+	if p.Fixable != 1 || p.Unfixable != 6 {
+		t.Errorf("totals fixable %d unfixable %d, want 1 and 6", p.Fixable, p.Unfixable)
+	}
+	if p.PreviewToken == "" {
+		t.Error("one fixable row is still worth a token")
+	}
+
+	counts = []int{0, 0, 0}
+	if p := s.preview(t); p.PreviewToken != "" || p.Fixable != 0 {
+		t.Errorf("nothing repairable but the preview offers a token: %+v", p)
+	}
+}
+
+// After a repair, anything left was not repaired, whatever the schema says:
+// the result shows it as skipped (or keep where the schema has no rule).
+func TestDBCleanupRemainingIsHonestAboutSkippedRows(t *testing.T) {
+	s := newStubbed()
+	s.after = []db.ForeignKeyDrift{
+		{ChildTable: "authors", ParentTable: "users", OnDelete: "NO ACTION", Violations: 1},
+		{ChildTable: "book_files", ParentTable: "books", OnDelete: "CASCADE", Violations: 3},
+	}
+	p := s.preview(t)
+	rec := postJSON(s.h.Cleanup, context.Background(), confirmBody(p.PreviewToken))
+	var resp dbCleanupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	got := map[string]string{}
+	for _, r := range resp.Remaining {
+		got[r.ChildTable] = r.Action
+	}
+	if got["authors"] != db.DriftActionKeep || got["book_files"] != dbActionSkipped {
+		t.Errorf("remaining actions = %v", got)
+	}
+}
+
+// A client that disconnects mid repair is a stop, logged at INFO as cancelled,
+// not an ERROR "failed".
+func TestDBCleanupCancelIsLoggedAsCancelledNotFailed(t *testing.T) {
+	var buf syncBuffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(old)
+
+	s := newStubbed()
+	inRepair := make(chan struct{})
+	s.h.repair = func(ctx context.Context) (db.RepairReport, error) {
+		close(inRepair)
+		<-ctx.Done()
+		return db.RepairReport{}, ctx.Err()
+	}
+	p := s.preview(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { postJSON(s.h.Cleanup, ctx, confirmBody(p.PreviewToken)); close(done) }()
+	<-inRepair
+	cancel()
+	<-done
+	out := buf.String()
+	if !strings.Contains(out, "database drift cleanup cancelled") || !strings.Contains(out, "level=INFO") {
+		t.Errorf("no INFO cancelled line in the log:\n%s", out)
+	}
+	if strings.Contains(out, "level=ERROR") || strings.Contains(out, "cleanup failed") {
+		t.Errorf("a client disconnect was logged as a failure:\n%s", out)
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe for a logger written from another goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // Defense in depth: even a validly signed token for a state with nothing
