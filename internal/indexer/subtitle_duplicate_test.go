@@ -92,6 +92,46 @@ func TestEditionSuffixIsNotAnotherBook(t *testing.T) {
 	}
 }
 
+// TestSubtitleConnectingWordsAreExplicit pins that only a short list of real
+// connecting words may stand between the wanted title and the suffix. Roman
+// numerals, short words and numbers (also before the title) name another book.
+func TestSubtitleConnectingWordsAreExplicit(t *testing.T) {
+	bc := bookContext{otherTitles: []string{"Rotten School - Punk'd and skunked"}}
+	for _, release := range []string{
+		"R L Stine - Rotten School II - Punk'd and Skunked (epub)",
+		"R L Stine - Rotten School XI Punk'd and Skunked (epub)",
+		"R L Stine - Rotten School I Punk'd and Skunked (epub)",
+		"R L Stine - Rotten School Mr Punk'd and Skunked (epub)",
+		"R L Stine - 11 - Rotten School - Punk'd and Skunked (epub)",
+	} {
+		if kept, _ := relevanceVerdict("Rotten School", "R. L. Stine", release, bc); kept {
+			t.Errorf("%q kept", release)
+		}
+	}
+	// The sibling's own full title, also with a connecting word, stays kept.
+	for _, release := range []string{
+		"R L Stine - Rotten School - Punk'd and Skunked (epub)",
+		"R L Stine - Rotten School and Punk'd and Skunked (epub)",
+	} {
+		if kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", release, bc); !kept {
+			t.Errorf("%q rejected: %s", release, reason)
+		}
+	}
+}
+
+// TestTwoPrefixedRowsShareOneSuffix pins that two prefixed rows with the same
+// suffix (two providers, two punctuation styles) are both subtitles: the full
+// title stays kept and the numbered release is still rejected.
+func TestTwoPrefixedRowsShareOneSuffix(t *testing.T) {
+	bc := bookContext{otherTitles: []string{"Rotten School - Punk'd and skunked", "Rotten School: Punk'd and Skunked"}}
+	if kept, reason := relevanceVerdict("Rotten School", "R. L. Stine", "R L Stine - Rotten School - Punk'd and Skunked (epub)", bc); !kept {
+		t.Errorf("full title rejected: %s", reason)
+	}
+	if kept, _ := relevanceVerdict("Rotten School", "R. L. Stine", "R L Stine - [Rotten School 11] - Punk'd and Skunked (epub)", bc); kept {
+		t.Error("numbered release kept")
+	}
+}
+
 // TestSetSiblingIsNotAnotherBook kills the set title skip: a release that
 // really carries the box set words is not made another book by a box set
 // sibling.

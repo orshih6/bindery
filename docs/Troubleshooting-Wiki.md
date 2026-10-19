@@ -158,16 +158,22 @@ and three more:
   that is the same book written with its subtitle (`Sapiens: A Brief History
   of Humankind` next to `Sapiens`, a duplicate from another provider) never
   rejects the release that carries the whole title straight after the wanted
-  one, in any punctuation (`Sapiens - A Brief History of Humankind`); anything
-  in between, such as a volume number, still counts as another book. If the
-  library also holds the subtitle as a book of its own, that book still
-  counts. Searching for `Punk'd and Skunked` itself still finds these
-  releases.
+  one, in any punctuation (`Sapiens - A Brief History of Humankind`). Only
+  connecting words (the, a, an, and, or, of, in, to, by, for, with, at, from,
+  on) may sit between the two; a number, a roman numeral, a short word such as
+  `Mr`, or a number before the wanted title (`11 - Rotten School - ...`) still
+  counts as another book. If the library also holds the subtitle as a book of
+  its own, that book still counts. Searching for `Punk'd and Skunked` itself
+  still finds these releases.
 
-  Known trade-off: with a library title
+- Known trade-off of the two rules above: with a library title
   `Dune 2 - Illustrated Edition` and no stored position, the plain `Dune -
   Illustrated Edition (epub)` is dropped for the wanted `Dune`, because the
-  words after the number count as another title.
+  words after the number count as another title. Known misses that stay kept,
+  as on main: a number after the suffix (`Punk'd and Skunked - Book 11`,
+  `#11`), a backtick used as the apostrophe, and a real book whose suffix
+  starts with an ordinal or a language name or reads like an edition (`Second
+  Foundation`, `Edition Zero`, `Anniversary Waltz`).
 
 The limit: with no series position, no library title that matches the main
 title, and no full title among the results, a lone `Legion (2012)` is still

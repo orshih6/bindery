@@ -535,7 +535,7 @@ func (tr *trailingRules) check(raw, n string, idents ...[]string) string {
 	if reason := tr.seriesNumberAfter(toks, k); reason != "" {
 		return reason
 	}
-	return tr.otherTitleIn(toks[k:])
+	return tr.otherTitleInLead(toks[k:], numberBeforeTitle(toks, n, idents...))
 }
 
 // locateTitle finds where the wanted title ends in the release: the tokens of
@@ -749,6 +749,13 @@ func (tr *trailingRules) seriesNumberAfter(toks []relTok, k int) string {
 
 // otherTitleIn is signal B. rest is what follows the wanted title.
 func (tr *trailingRules) otherTitleIn(rest []relTok) string {
+	return tr.otherTitleInLead(rest, false)
+}
+
+// otherTitleInLead is otherTitleIn that also knows whether a series number
+// stands before the wanted title, which stops a prefixed sibling's suffix from
+// counting as the sibling's own full title.
+func (tr *trailingRules) otherTitleInLead(rest []relTok, numberedLead bool) string {
 	if len(tr.others) == 0 {
 		return ""
 	}
@@ -775,7 +782,7 @@ func (tr *trailingRules) otherTitleIn(rest []relTok) string {
 		for _, loc := range phraseRegex(ot.ident).FindAllStringIndex(haystack, -1) {
 			start := len(strings.Fields(haystack[:loc[0]]))
 			end := len(strings.Fields(haystack[:loc[1]]))
-			if ot.prefixed && startsRightAfterTitle(rest, start) {
+			if ot.prefixed && !numberedLead && startsRightAfterTitle(rest, start) {
 				continue
 			}
 			if !seriesLabel(rest, start, end) {
@@ -797,18 +804,44 @@ func stripMarks(s string) string {
 	}, norm.NFD.String(s))
 }
 
-// startsRightAfterTitle reports whether nothing but connecting words (an
-// article, "or", "and") sits between the wanted title and rest[start:]. The
-// release then reads wanted title plus suffix, the library sibling's own full
-// title (#3382). A number or any significant word in between
-// ("[Rotten School 11] - Punk'd and Skunked") means a different book.
+// connectingWords are the only words that may sit between the wanted title and
+// a prefixed sibling's suffix when the release is still that sibling's own full
+// title ("Sapiens - A Brief History of Humankind", "Frankenstein or The Modern
+// Prometheus"). Everything else, a roman numeral ("II"), a short word ("Mr"), a
+// number or any ordinary word, makes the release name another book.
+var connectingWords = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "or": true, "of": true, "in": true,
+	"to": true, "by": true, "for": true, "with": true, "at": true, "from": true, "on": true,
+}
+
+// startsRightAfterTitle reports whether nothing but connecting words sits
+// between the wanted title and rest[start:]. The release then reads wanted
+// title plus suffix, the library sibling's own full title (#3382). A number or
+// any other word in between ("[Rotten School 11] - Punk'd and Skunked") means a
+// different book.
 func startsRightAfterTitle(rest []relTok, start int) bool {
 	for _, t := range rest[:start] {
-		if isAllDigits(t.text) || len(newznab.SigWords(t.text)) != 0 {
+		if !connectingWords[t.text] {
 			return false
 		}
 	}
 	return true
+}
+
+// numberBeforeTitle reports whether a series number of up to three digits sits
+// directly before the wanted title in the release ("11 - Rotten School - ..."),
+// which names a numbered volume whatever follows the title.
+func numberBeforeTitle(toks []relTok, n string, idents ...[]string) bool {
+	for _, ident := range idents {
+		if len(ident) == 0 {
+			continue
+		}
+		if loc := phraseRegex(ident).FindStringIndex(n); loc != nil {
+			start := len(strings.Fields(n[:loc[0]]))
+			return start > 0 && start <= len(toks) && len(toks[start-1].text) <= 3 && isAllDigits(toks[start-1].text)
+		}
+	}
+	return false
 }
 
 // seriesWords are the words after a series name that say it is a series.
