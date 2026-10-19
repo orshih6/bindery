@@ -1879,6 +1879,7 @@
     "autoSearchFailed": "Automatisk søk mislyktes",
     "noIndexers": "Ingen indekserere er konfigurert. Legg til en under",
     "noResults": "Ingen treff i noen indekserere. Utvid søkedetaljene nedenfor for å se hvorfor.",
+    "noResultsFiltered": "Ingen utgivelser passet til boken, men {{count}} ble filtrert bort. Åpne Filtrert nedenfor for å se hvorfor.",
     "filteredHeading": "Filtrert ({{count}})",
     "filteredHint": "Bindery sorterte bort disse. Hent en hvis du vet at det er riktig utgivelse.",
     "filteredCapped": "Viser {{shown}} av {{total}}.",

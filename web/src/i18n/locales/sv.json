@@ -1865,6 +1865,7 @@
     "autoSearchFailed": "Automatisk sökning misslyckades",
     "noIndexers": "Inga indexerare har konfigurerats. Lägg till en under",
     "noResults": "Inga resultat från någon indexerare. Fäll ut sökdetaljerna nedan för att se varför.",
+    "noResultsFiltered": "Inga utgåvor matchade boken, men {{count}} filtrerades bort. Öppna Filtrerade nedan för att se varför.",
     "filteredHeading": "Filtrerade ({{count}})",
     "filteredHint": "Binderys filter sorterade bort dessa. Hämta en om du vet att det är rätt utgåva.",
     "filteredCapped": "Visar {{shown}} av {{total}}.",

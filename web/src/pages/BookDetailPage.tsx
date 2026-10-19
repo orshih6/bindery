@@ -1641,6 +1641,8 @@ function BookDetailPageInner() {
                 {t('bookDetail.noIndexers')}{' '}
                 <Link to="/settings" className="underline">{t('nav.settings')}</Link>.
               </>
+            ) : filtered.length > 0 ? (
+              t('bookDetail.noResultsFiltered', { count: filteredTotal ?? filtered.length })
             ) : (
               t('bookDetail.noResults')
             )}

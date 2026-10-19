@@ -371,7 +371,7 @@ GET    /api/v1/book/{id}/calibre                  where the book stands in the C
   or a chapter fragment) are never in `filtered`; they show in
   `debug.filters` only.
 * `filteredTotal` is how many the filters removed. `filtered` holds at most 100
-  of them, the likeliest matches first, so `filteredTotal` can be larger than
+  of them, the likeliest matches first (for a dual-format book, alternating between the two formats), so `filteredTotal` can be larger than
   `filtered.length`.
 
 Clients written before this ignore the two new keys and see no change. Automatic

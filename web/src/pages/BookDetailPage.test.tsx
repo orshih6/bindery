@@ -955,6 +955,17 @@ describe('BookDetailPage — filtered releases', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Search ebook indexers/ }))
 
     expect(await screen.findByRole('button', { name: /Filtered \(1\)/ })).toBeInTheDocument()
+    expect(screen.getByText(/No releases matched this book, but 1 were filtered out/)).toBeInTheDocument()
+    expect(screen.queryByText(/No results on any indexer/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the plain no results text when nothing was filtered either', async () => {
+    vi.mocked(api.searchBook).mockResolvedValue({ results: [], filtered: [], debug: null })
+    renderBookDetailPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Search ebook indexers/ }))
+
+    expect(await screen.findByText(/No results on any indexer/)).toBeInTheDocument()
+    expect(screen.queryByText(/were filtered out/)).not.toBeInTheDocument()
   })
 
   it('grabs a filtered release through the existing grab call', async () => {

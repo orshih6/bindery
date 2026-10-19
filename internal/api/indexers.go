@@ -958,16 +958,19 @@ func stampDropped(d *indexer.SearchDebug, mediaType string) {
 // results, GUID-less ones skipped (a grab needs a GUID), capped at
 // maxFilteredReleases. It returns the capped list and the count before the cap.
 func collectFiltered(kept, langDropped []newznab.SearchResult, langReason string, relDropped []indexer.DroppedRelease) ([]indexer.DroppedRelease, int) {
+	// Keyed the way the registry and the UI key a release: the GUID with its
+	// credentials stripped, so two releases differing only in credentials are
+	// one release here too.
 	seen := make(map[string]bool, len(kept))
 	for _, r := range kept {
-		seen[r.GUID] = true
+		seen[registryKey(r.GUID)] = true
 	}
 	var all []indexer.DroppedRelease
 	add := func(d indexer.DroppedRelease) {
-		if d.Result.GUID == "" || seen[d.Result.GUID] {
+		if d.Result.GUID == "" || seen[registryKey(d.Result.GUID)] {
 			return
 		}
-		seen[d.Result.GUID] = true
+		seen[registryKey(d.Result.GUID)] = true
 		all = append(all, d)
 	}
 	for _, r := range langDropped {
@@ -976,11 +979,40 @@ func collectFiltered(kept, langDropped []newznab.SearchResult, langReason string
 	for _, d := range relDropped {
 		add(d)
 	}
+	all = interleaveByMediaType(all)
 	total := len(all)
 	if total > maxFilteredReleases {
 		all = all[:maxFilteredReleases]
 	}
 	return all, total
+}
+
+// interleaveByMediaType round robins releases across media types, keeping each
+// type's own order, so the cap keeps the best of each format of a dual-format
+// book rather than all of one format's. Without a media type (a single-format
+// book) it is the identity.
+func interleaveByMediaType(in []indexer.DroppedRelease) []indexer.DroppedRelease {
+	var order []string
+	groups := map[string][]indexer.DroppedRelease{}
+	for _, d := range in {
+		mt := d.Result.MediaType
+		if _, ok := groups[mt]; !ok {
+			order = append(order, mt)
+		}
+		groups[mt] = append(groups[mt], d)
+	}
+	if len(order) < 2 {
+		return in
+	}
+	out := make([]indexer.DroppedRelease, 0, len(in))
+	for i := 0; len(out) < len(in); i++ {
+		for _, mt := range order {
+			if i < len(groups[mt]) {
+				out = append(out, groups[mt][i])
+			}
+		}
+	}
+	return out
 }
 
 // LastSearchDebug returns the newest search audit trail the caller may see,
