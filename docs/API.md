@@ -1050,7 +1050,11 @@ changes nothing.
 (anything else: reported and left alone). Each relationship also carries
 `fixable`, how many of its `violations` a cleanup can really resolve. Rows it
 cannot address (a `WITHOUT ROWID` table) or cannot confirm as orphaned with the
-repair's own test are counted in `violations` but not in `fixable`, and a
+repair's own test, or whose `SET NULL` column must have a value, are counted in
+`violations` but not in `fixable`. The preview cannot cheaply know when another
+table restricts a delete, so `fixable` can still overstate there; such rows show
+up as skipped afterwards. A schema with `RAISE(ROLLBACK)` triggers is not
+supported by the cleanup. A
 relationship with none repairable has `action` `skipped`. `fixable` and
 `unfixable` at the top level are the sums. `previewToken` is absent when nothing
 is fixable. It is signed with a key that exists only in the running process, so

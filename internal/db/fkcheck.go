@@ -3,10 +3,13 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"strings"
+
+	"modernc.org/sqlite"
 )
 
 // This file holds the referential-integrity tooling that keeps a pre-existing
@@ -420,9 +423,17 @@ func (r *repairer) apply(ctx context.Context, ex fkExecer, v ForeignKeyViolation
 // would empty). SQLite undoes just that statement and leaves an enclosing
 // transaction usable, so one such row is a skip, not a reason to abandon the
 // batch: otherwise every rerun would stop at the same row.
+//
+// The check is on the driver's error code, the SQLITE_CONSTRAINT primary code
+// (extended codes such as NOT NULL, CHECK, FOREIGN KEY and a trigger's RAISE
+// all carry it in their low byte), never on message text.
 func isConstraintError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "constraint failed")
+	var se *sqlite.Error
+	return errors.As(err, &se) && se.Code()&0xff == sqliteConstraint
 }
+
+// sqliteConstraint is SQLITE_CONSTRAINT, the primary result code.
+const sqliteConstraint = 19
 
 func constraintSkipNote(v ForeignKeyViolation) string {
 	return fmt.Sprintf("%s -> %s: a constraint refused the repair of at least one row, left as it is", v.Table, v.Parent)

@@ -214,6 +214,17 @@ func driftFixable(ctx context.Context, q fkExecer, found []ForeignKeyDrift) ([]i
 			if a.parent != d.ParentTable || !strings.EqualFold(a.onDelete, d.OnDelete) {
 				continue
 			}
+			if DriftAction(a.onDelete) == DriftActionClear {
+				// SET NULL on a column that must have a value is refused by
+				// the database for every row, so none of them is fixable.
+				blocked, err := anyNotNull(ctx, q, d.ChildTable, a.columns)
+				if err != nil {
+					return nil, err
+				}
+				if blocked {
+					continue
+				}
+			}
 			guard, err := orphanGuard(ctx, q, d.ChildTable, a)
 			if err != nil {
 				continue // cannot be repaired, so not counted
@@ -231,11 +242,11 @@ func driftFixable(ctx context.Context, q fkExecer, found []ForeignKeyDrift) ([]i
 
 // scanOne runs a query returning one integer column. arg, when non empty, is
 // bound as the single parameter.
-func scanOne(ctx context.Context, q fkExecer, query, arg string, dest *int) error {
+func scanOne(ctx context.Context, q fkExecer, query, arg string, dest *int, more ...any) error {
 	var rows *sql.Rows
 	var err error
 	if arg != "" {
-		rows, err = q.QueryContext(ctx, query, arg)
+		rows, err = q.QueryContext(ctx, query, append([]any{arg}, more...)...)
 	} else {
 		rows, err = q.QueryContext(ctx, query)
 	}
@@ -249,4 +260,18 @@ func scanOne(ctx context.Context, q fkExecer, query, arg string, dest *int) erro
 		}
 	}
 	return rows.Err()
+}
+
+// anyNotNull reports whether any of the named columns of table is NOT NULL.
+func anyNotNull(ctx context.Context, q fkExecer, table string, columns []string) (bool, error) {
+	for _, col := range columns {
+		var nn int
+		if err := scanOne(ctx, q, `SELECT COALESCE(MAX("notnull"), 0) FROM pragma_table_info(?) WHERE "name" = ?`, table, &nn, col); err != nil {
+			return false, fmt.Errorf("table_info(%s): %w", table, err)
+		}
+		if nn != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }

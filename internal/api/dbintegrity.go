@@ -524,6 +524,7 @@ func (h *DBIntegrityHandler) Cleanup(w http.ResponseWriter, r *http.Request) {
 		for i := range resp.Remaining {
 			if resp.Remaining[i].Action != db.DriftActionKeep {
 				resp.Remaining[i].Action = dbActionSkipped
+				resp.Remaining[i].Fixable = 0
 			}
 		}
 		resp.Verified = true

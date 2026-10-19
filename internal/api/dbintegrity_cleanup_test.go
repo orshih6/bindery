@@ -516,9 +516,49 @@ func TestDBCleanupRemainingIsHonestAboutSkippedRows(t *testing.T) {
 	got := map[string]string{}
 	for _, r := range resp.Remaining {
 		got[r.ChildTable] = r.Action
+		// Nothing left over was repaired, so none of it is "fixable".
+		if r.Fixable != 0 {
+			t.Errorf("remaining %s fixable = %d, want 0", r.ChildTable, r.Fixable)
+		}
 	}
 	if got["authors"] != db.DriftActionKeep || got["book_files"] != dbActionSkipped {
 		t.Errorf("remaining actions = %v", got)
+	}
+}
+
+// A cleanup that the database would refuse for every row (SET NULL on a NOT
+// NULL column) is not offered: fixable 0, action skipped, no token, so no
+// backup and no no-op repair.
+func TestDBCleanupPreviewOfARefusedRelationshipOffersNoToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bindery.db")
+	conn, err := db.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	for _, st := range []string{
+		`CREATE TABLE zz_parent (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE zz_nn (id INTEGER PRIMARY KEY, pid INTEGER NOT NULL REFERENCES zz_parent(id) ON DELETE SET NULL)`,
+		`PRAGMA foreign_keys = OFF`,
+		`INSERT INTO zz_nn (id, pid) VALUES (1, 9), (2, 9), (3, 9)`,
+		`PRAGMA foreign_keys = ON`,
+	} {
+		if _, err := conn.Exec(st); err != nil {
+			t.Fatalf("%s: %v", st, err)
+		}
+	}
+	h := NewDBIntegrityHandler(conn, path, NewBackupHandler(conn, path, dir))
+	rec := postJSON(h.Preview, context.Background(), "")
+	var p dbCleanupPreviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("preview = %d %s", rec.Code, rec.Body.String())
+	}
+	if p.Total != 3 || p.Fixable != 0 || p.Unfixable != 3 || p.PreviewToken != "" {
+		t.Errorf("preview = %+v, want 3 rows, none fixable, no token", p)
+	}
+	if len(p.Relationships) != 1 || p.Relationships[0].Action != dbActionSkipped || p.Relationships[0].Fixable != 0 {
+		t.Errorf("relationships = %+v, want one skipped relationship", p.Relationships)
 	}
 }
 
