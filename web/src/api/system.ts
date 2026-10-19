@@ -82,6 +82,42 @@ export interface DBIntegrityReport {
   checkedAt: string
 }
 
+/** What a cleanup does with a relationship's rows: remove them, clear the
+ *  reference and keep the row, or leave them alone. */
+export type DBCleanupAction = 'delete' | 'clear' | 'keep'
+
+export interface DBCleanupRelationship extends DBIntegrityRelationship {
+  action: DBCleanupAction
+}
+
+/** Result of POST /system/db-integrity/cleanup/preview (#3357). Changes nothing.
+ *  previewToken is absent when a cleanup would have nothing to do. */
+export interface DBCleanupPreview {
+  relationships: DBCleanupRelationship[]
+  total: number
+  fixable: number
+  unfixable: number
+  checkedAt: string
+  previewToken?: string
+  expiresAt?: string
+}
+
+/** Result of POST /system/db-integrity/cleanup (#3357). */
+export interface DBCleanupResult {
+  deleted: number
+  cleared: number
+  skipped: number
+  skipNotes: string[]
+  /** What a fresh scan still finds after the repair. Meaningless unless verified. */
+  remaining: DBCleanupRelationship[]
+  remainingTotal: number
+  verified: boolean
+  backupPath: string
+  backupName: string
+  durationMs: number
+  completedAt: string
+}
+
 export interface LogQuery {
   level?: string
   component?: string
@@ -124,4 +160,14 @@ export const systemApi = {
   /** Read only foreign key drift scan. Admin only, a full database pass, so
    *  call it from a button and never on load. */
   checkDBIntegrity: () => request<DBIntegrityReport>('/system/db-integrity', { method: 'POST' }),
+  /** What a cleanup would do, per relationship, plus the token a cleanup must
+   *  present. Read only; admin only; a full database pass. */
+  previewDBCleanup: () => request<DBCleanupPreview>('/system/db-integrity/cleanup/preview', { method: 'POST' }),
+  /** Deletes and clears the rows the preview described, after taking a backup.
+   *  The token binds the request to that preview. */
+  cleanupDB: (previewToken: string) =>
+    request<DBCleanupResult>('/system/db-integrity/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true, previewToken }),
+    }),
 }

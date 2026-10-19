@@ -1198,7 +1198,7 @@ func main() {
 
 		// Foreign key drift report, admin-only and on demand (see
 		// registerDBIntegrityRoutes).
-		registerDBIntegrityRoutes(r, api.NewDBIntegrityHandler(database, cfg.DBPath))
+		registerDBIntegrityRoutes(r, api.NewDBIntegrityHandler(database, cfg.DBPath, backupHandler))
 
 		// Library. The scan status returns server filesystem paths, so it is
 		// admin only (#2361); see registerLibraryScanStatusRoute.
