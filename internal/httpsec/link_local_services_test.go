@@ -205,8 +205,9 @@ func TestLinkLocalServices_RedirectGuard(t *testing.T) {
 			t.Errorf("redirect to %s allowed", ip)
 		}
 	}
-	if err := hop(PolicyService, urlFor("169.254.1.2")); err != nil {
-		t.Errorf("redirect to link-local refused with option on: %v", err)
+	// The allowance is for the typed base URL only, never for a redirect hop.
+	if err := hop(PolicyService, urlFor("169.254.1.2")); err == nil {
+		t.Error("redirect to link-local allowed with option on")
 	}
 	if err := hop(PolicyLANLoopback, urlFor("169.254.1.2")); err == nil {
 		t.Error("non-service policy followed a redirect to link-local")

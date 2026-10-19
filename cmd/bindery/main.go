@@ -117,6 +117,10 @@ func main() {
 			"bypassLocal", cfg.OutboundProxyBypassLocal)
 	}
 
+	if httpsec.LinkLocalServicesEnabled() {
+		slog.Warn(httpsec.LinkLocalServicesEnvVar + " is on: the service URLs you type (indexers, Prowlarr, download clients, Audiobookshelf, Grimmory, Calibre plugin) may use link-local addresses. Cloud metadata addresses stay blocked.")
+	}
+
 	slog.Info("starting bindery",
 		"version", version,
 		"commit", commit,

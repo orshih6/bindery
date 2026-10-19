@@ -84,6 +84,9 @@ var defaultResolver Resolver = netResolver{}
 // validation can never disagree.
 func linkLocalServicesAllowed() bool { return envIsTruthy(LinkLocalServicesEnvVar) }
 
+// LinkLocalServicesEnabled reports whether the operator turned the opt-in on.
+func LinkLocalServicesEnabled() bool { return linkLocalServicesAllowed() }
+
 // cloudMetadataHosts lists well-known metadata endpoints that must never be
 // reachable from a webhook, regardless of policy.
 var cloudMetadataHosts = map[string]bool{
@@ -269,6 +272,12 @@ func ValidateIP(ip net.IP, policy Policy) error {
 	return checkIP(ip, policy)
 }
 
+// redirectHopKey marks a dial that belongs to a followed redirect. A redirect
+// target is chosen by the remote service's response, so it never gets the
+// link-local allowance that only the admin-typed base URL has. RedirectGuard
+// sets it on the follow-up request.
+type redirectHopKey struct{}
+
 // resolveIPAddr is the resolver NewDialContext uses. It is a package var only
 // so a test can present a controlled pair of addresses: there is no way to make
 // a real DNS name resolve to a chosen A/AAAA pair from a unit test. Never
@@ -286,6 +295,13 @@ var resolveIPAddr = net.DefaultResolver.LookupIPAddr
 func NewDialContext(policy Policy) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	dialer := &net.Dialer{}
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		// A dial for a redirect hop drops the link-local allowance, so a
+		// hostname that only resolves to link-local at connect time is refused
+		// too. Loopback and LAN behave as before.
+		policy := policy
+		if policy == PolicyService && ctx.Value(redirectHopKey{}) != nil {
+			policy = PolicyLANLoopback
+		}
 		// addr is "host:port" as provided by the HTTP transport.
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {

@@ -63,7 +63,7 @@ func NewWithTimeout(baseURL, apiKey string, timeout time.Duration) *Client {
 		// to the same Prowlarr/Jackett hosts. Without the proxy transport, a
 		// Prowlarr reachable only through the configured egress proxy fails on
 		// the sync/test path while indexer searches succeed (#proxy-bypass).
-		http: &http.Client{Timeout: timeout, Transport: sharedGuardedTransport()},
+		http: &http.Client{Timeout: timeout, Transport: sharedGuardedTransport(), CheckRedirect: httpsec.RedirectGuard(httpsec.PolicyService)},
 	}
 }
 

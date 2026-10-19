@@ -140,6 +140,9 @@ func newHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: sharedTransportInstance(),
+		// An indexer is a remote party: its redirects never get the link-local
+		// allowance and never reach cloud metadata (#2036).
+		CheckRedirect: httpsec.RedirectGuard(httpsec.PolicyService),
 	}
 }
 
