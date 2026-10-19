@@ -50,6 +50,8 @@ export const HEADINGS: HeadingEntry[] = [
   { tab: 'quality', key: 'settings.quality.heading' },
   { tab: 'metadata', key: 'settings.metadata.heading' },
   { tab: 'metadata', literal: 'Library Defaults' },
+  { tab: 'metadata', key: 'settings.general.enrichersHeading', fallback: 'Enrichers' },
+  { tab: 'metadata', key: 'settings.general.audiobookSourcesHeading', fallback: 'Audiobook sources' },
   { tab: 'rootfolders', key: 'settings.rootfolders.heading' },
   { tab: 'import', key: 'settings.import.csvHeading' },
   { tab: 'import', key: 'settings.import.readarrHeading' },
