@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useId } from 'react'
+import { useCallback, useEffect, useRef, useState, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api, BINDERY_BASE, Book, HardcoverList, ImportList, ImportListSyncProgress, ManagedUser, ManualImportLookup, MigrateResult, ReadarrImportProgress } from '../../api/client'
 import { inputCls } from './formStyles'
@@ -18,12 +18,18 @@ export default function ImportTab({ onNavigate }: ImportTabProps = {}) {
   const [readarrProgress, setReadarrProgress] = useState<ReadarrImportProgress | null>(null)
   const [uploading, setUploading] = useState<'csv' | 'readarr' | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const uploadStartedRef = useRef(false)
 
   const upload = async (endpoint: 'csv' | 'readarr', file: File) => {
     setUploading(endpoint)
     setErr(null)
     setCsvResult(null)
-    setReadarrProgress(null)
+    // Only a new Readarr upload clears the Readarr view. A CSV upload must not
+    // hide a catalogue backfill that is still running.
+    if (endpoint === 'readarr') {
+      uploadStartedRef.current = true
+      setReadarrProgress(null)
+    }
     try {
       const fd = new FormData()
       fd.append('file', file)
@@ -43,9 +49,16 @@ export default function ImportTab({ onNavigate }: ImportTabProps = {}) {
   // A returning visitor mid-import (or mid catalogue backfill, which can run
   // for tens of minutes) picks the progress back up.
   useEffect(() => {
+    let cancelled = false
     api.readarrImportStatus()
-      .then(p => { if (p?.running || p?.catalogueRunning) setReadarrProgress(p) })
+      .then(p => {
+        // A late answer must not overwrite state after unmount or after an
+        // upload from this page has started.
+        if (cancelled || uploadStartedRef.current) return
+        if (p?.running || p?.catalogueRunning) setReadarrProgress(p)
+      })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
   // Poll while the database import or the catalogue backfill behind it is

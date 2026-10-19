@@ -180,6 +180,45 @@ describe('ImportTab coverage', () => {
       expect(mocked.readarrImportStatus.mock.calls.length).toBe(calls)
     })
 
+    it('never shows more done than the total', async () => {
+      mocked.uploadMigrate.mockResolvedValue({ running: false, catalogueRunning: true, catalogueTotal: 5, catalogueDone: 9 })
+      const { container } = render(<ImportTab />)
+      fireEvent.change(fileInput(container, '.db'), { target: { files: [new File(['x'], 'readarr.db')] } })
+      expect(await screen.findByText(FETCHING(5, 5))).toBeInTheDocument()
+      expect(screen.queryByText(FETCHING(9, 5))).not.toBeInTheDocument()
+    })
+
+    it('disables the Readarr upload while the database phase is running', async () => {
+      mocked.uploadMigrate.mockResolvedValue({ running: true })
+      const { container } = render(<ImportTab />)
+      fireEvent.change(fileInput(container, '.db'), { target: { files: [new File(['x'], 'readarr.db')] } })
+      await waitFor(() => expect(mocked.uploadMigrate).toHaveBeenCalled())
+      // Wait for the upload itself to finish, so only the running flag can disable it.
+      await screen.findByText('settings.import.importingReadarr', { selector: 'p' })
+      expect(fileInput(container, '.db')).toBeDisabled()
+    })
+
+    it('does not hide a running backfill when a CSV is uploaded', async () => {
+      mocked.readarrImportStatus.mockResolvedValue({ running: false, catalogueRunning: true, catalogueTotal: 40, catalogueDone: 12 })
+      mocked.uploadMigrate.mockResolvedValue({ requested: 1, added: 1, skipped: 0, errors: 0 })
+      const { container } = render(<ImportTab />)
+      expect(await screen.findByText(FETCHING(12, 40))).toBeInTheDocument()
+      fireEvent.change(fileInput(container, '.csv'), { target: { files: [new File(['a'], 'a.csv')] } })
+      expect(await screen.findByText('1 requested · 1 added · 0 skipped (already exist) · 0 failed')).toBeInTheDocument()
+      expect(screen.getByText(FETCHING(12, 40))).toBeInTheDocument()
+    })
+
+    it('ignores a late mount probe once a Readarr upload has started', async () => {
+      let resolveProbe: (v: unknown) => void = () => {}
+      mocked.readarrImportStatus.mockReturnValue(new Promise(r => { resolveProbe = r }))
+      mocked.uploadMigrate.mockResolvedValue({ running: false, result: { authors: { requested: 1, added: 1 } } })
+      const { container } = render(<ImportTab />)
+      fireEvent.change(fileInput(container, '.db'), { target: { files: [new File(['x'], 'readarr.db')] } })
+      expect(await screen.findByText('Authors')).toBeInTheDocument()
+      await act(async () => { resolveProbe({ running: false, catalogueRunning: true, catalogueTotal: 9, catalogueDone: 1 }) })
+      expect(screen.queryByTestId('readarr-catalogue-progress')).not.toBeInTheDocument()
+    })
+
     it('treats an older server with no catalogue fields as having none', async () => {
       mocked.uploadMigrate.mockResolvedValue({ running: false, result: { authors: { requested: 1, added: 1 } } })
       const { container } = render(<ImportTab />)
