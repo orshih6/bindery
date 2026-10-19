@@ -89,9 +89,9 @@ func (c *Client) SetHTTPClient(h *http.Client) {
 // indexer hostname can flip its DNS record to 169.254.169.254 (cloud
 // metadata) or an RFC1918 address after the initial check passes. The
 // per-connection re-validation catches a post-TTL rebind before connect(2).
-// PolicyLAN is used because indexers legitimately run on LAN addresses;
-// loopback, link-local, and cloud-metadata remain blocked under all
-// policies.
+// PolicyService is used because indexers legitimately run on LAN and loopback
+// addresses. Link-local is refused unless the operator sets
+// BINDERY_ALLOW_LINK_LOCAL_SERVICES (#2036); cloud metadata never is.
 var (
 	sharedTransportOnce sync.Once
 	sharedTransport     *http.Transport
@@ -113,7 +113,7 @@ func sharedTransportInstance() *http.Transport {
 		transportBuildCount.Add(1)
 		sharedTransport = &http.Transport{
 			Proxy:                 httpsec.ProxyFunc(),
-			DialContext:           httpsec.NewDialContext(httpsec.PolicyLANLoopback),
+			DialContext:           httpsec.NewDialContext(httpsec.PolicyService),
 			MaxIdleConns:          100,
 			MaxIdleConnsPerHost:   8,
 			IdleConnTimeout:       90 * time.Second,

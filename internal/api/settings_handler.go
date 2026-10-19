@@ -1058,7 +1058,7 @@ func validateSettingValue(key, value string) error {
 		// Block link-local and cloud-metadata so the Calibre plugin URL can't
 		// be used as an admin-only SSRF foot-gun (mirrors ABS / Grimmory /
 		// indexer / prowlarr / downloadclient validation).
-		if err := httpsec.ValidateOutboundURL(value, httpsec.PolicyLANLoopback); err != nil {
+		if err := httpsec.ValidateOutboundURL(value, httpsec.PolicyService); err != nil {
 			return fmt.Errorf("plugin_url %q: %w", value, err)
 		}
 	case SettingABSBaseURL:
