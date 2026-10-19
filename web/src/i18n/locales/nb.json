@@ -739,6 +739,22 @@
     }
   },
   "series": {
+    "addFromHardcover": {
+      "searchLabel": "Søk etter en serie på Hardcover",
+      "searchPlaceholder": "Søk etter en serie på Hardcover",
+      "search": "Søk",
+      "searching": "Søker …",
+      "noResults": "Fant ingen Hardcover-serier.",
+      "searchFailed": "Søket på Hardcover mislyktes",
+      "bookCount_one": "{{count}} bok",
+      "bookCount_other": "{{count}} bøker",
+      "viewOnHardcover": "Vis på Hardcover ↗",
+      "add": "Legg til",
+      "adding": "Legger til …",
+      "addResult": "Legg til {{title}}",
+      "addFailed": "Kunne ikke legge til serien",
+      "alreadyAdded": "Allerede i biblioteket ditt"
+    },
     "searchPlaceholder": "Søk i serier…",
     "noMatch": "Ingen serier samsvarer med «{{query}}»",
     "deleteConfirm": "Slette «{{title}}» fra Serier? Tilknyttede bøker blir værende i biblioteket.",

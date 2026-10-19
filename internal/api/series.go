@@ -346,12 +346,20 @@ func (h *SeriesHandler) UnmonitorSplitEditionParts(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]int64{"unmonitored": n})
 }
 
+// Create makes a series. With a "hardcover" object it creates the series from
+// a Hardcover search result and links it in one step (#1706); without one it
+// is the manual, title only path it always was.
 func (h *SeriesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Title string `json:"title"`
+		Title     string                      `json:"title"`
+		Hardcover *seriesHardcoverLinkRequest `json:"hardcover"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if body.Hardcover != nil {
+		h.createFromHardcover(w, r, body.Title, *body.Hardcover)
 		return
 	}
 	title, validationErr := validateSeriesTitle(body.Title)
@@ -365,6 +373,71 @@ func (h *SeriesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, series)
+}
+
+// createFromHardcover creates a series from a Hardcover search result and
+// links it. The provider is asked first, so a provider failure never creates
+// anything; if storing the link still fails the new series is deleted again,
+// so no orphan is left behind. A Hardcover series that is already in the
+// library is not created twice: the answer is 409 carrying the existing
+// series id, which the UI opens instead of showing an error.
+func (h *SeriesHandler) createFromHardcover(w http.ResponseWriter, r *http.Request, rawTitle string, req seriesHardcoverLinkRequest) {
+	if !h.requireEnhancedHardcoverAPI(w, r) {
+		return
+	}
+	ctx := r.Context()
+	req.ForeignID = strings.TrimSpace(req.ForeignID)
+	if req.ForeignID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hardcover.foreignId is required"})
+		return
+	}
+	link, err := h.linkFromRequest(ctx, 0, req, "manual")
+	if err != nil {
+		if errors.Is(err, errSeriesMetadataProvider) {
+			writeUpstreamError(w, err)
+			return
+		}
+		writeServerError(w, r, err)
+		return
+	}
+
+	// Check the id the client sent and the one the catalogue resolved it to.
+	for _, hcID := range []string{req.ForeignID, link.HardcoverSeriesID} {
+		existing, err := h.series.GetByHardcoverSeriesID(ctx, hcID)
+		if err != nil {
+			writeServerError(w, r, err)
+			return
+		}
+		if existing != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":    "this hardcover series is already in your library",
+				"seriesId": existing.ID,
+			})
+			return
+		}
+	}
+
+	title, validationErr := validateSeriesTitle(firstNonEmpty(strings.TrimSpace(rawTitle), link.HardcoverTitle, strings.TrimSpace(req.Title)))
+	if validationErr != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": validationErr})
+		return
+	}
+	series, err := h.series.CreateManual(ctx, title)
+	if err != nil {
+		writeServerError(w, r, err)
+		return
+	}
+	link.SeriesID = series.ID
+	if err := h.series.UpsertHardcoverLink(ctx, link); err != nil {
+		if delErr := h.series.Delete(context.WithoutCancel(ctx), series.ID); delErr != nil {
+			slog.Error("series: could not roll back a series whose hardcover link failed",
+				"seriesID", series.ID, "error", delErr)
+		}
+		writeServerError(w, r, err)
+		return
+	}
+	series.HardcoverLink = link
+	writeSeries(w, http.StatusCreated, series)
 }
 
 func (h *SeriesHandler) Update(w http.ResponseWriter, r *http.Request) {
