@@ -10,9 +10,11 @@ import (
 
 // TestTitlesNameDifferentWorks is the guard's table. The first block is the
 // reported pair and its kind: a long shared series name with different books
-// after it. The rest must NOT read as different works, because a false
-// positive here only leaves a file unmatched but a false negative attaches it
-// to the wrong book.
+// after it. The rest must NOT read as different works. Calling a real match
+// different (a false positive for this guard) costs a file its match and
+// leaves it unmatched, which can also make an owned book read as not owned.
+// Missing a different work (a false negative) is the old behaviour: the file
+// is attached to the wrong book.
 func TestTitlesNameDifferentWorks(t *testing.T) {
 	tests := []struct {
 		name string
@@ -51,6 +53,15 @@ func TestTitlesNameDifferentWorks(t *testing.T) {
 		{"square bracket tag", "Rhythm of War [Unabridged]", "Rhythm of War", false},
 		{"author in the file name, series in brackets", "Rhythm of War Sanderson", "Rhythm of War (The Stormlight Archive)", false},
 		{"one word inside a longer compound", "Harry Potter Kind", "Harry Potter Vervloektekind", false},
+		{"philosopher against sorcerer", "Harry Potter and the Philosopher's Stone", "Harry Potter and the Sorcerer's Stone", false},
+		{"sorcerer against philosopher", "Harry Potter and the Sorcerer's Stone", "Harry Potter and the Philosopher's Stone", false},
+		{"abbreviated honorifics", "Dr. Jekyll and Mr. Hyde", "Doctor Jekyll and Mister Hyde", false},
+		{"doctor against dr", "Doctor Sleep", "Dr. Sleep", false},
+		{"saint, junior, versus, missus", "St. Elmo Jr. vs Mrs. Dalloway", "Saint Elmo Junior versus Missus Dalloway", false},
+		{"ligature letters", "Æsop's Fables", "Aesop's Fables", false},
+		{"slashed o", "Øya Stories", "Oya Stories", false},
+		{"fi ligature", "The ﬁre Within", "The fire Within", false},
+		{"equivalents do not blur real differences", "Harry Potter and the Philosopher's Stone", "Harry Potter and the Chamber of Secrets", true},
 		{"filler word on each side", "Project Hail Mary Annotated", "Project Hail Mary: A Novel", false},
 		{"volume numbers are not this rule's", "Defiance of the Fall 17", "Defiance of the Fall 01", false},
 		{"digits on one side", "Harry Potter 07 Relieken", "Harry Potter Relieken", false},

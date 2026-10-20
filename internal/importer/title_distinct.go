@@ -5,6 +5,10 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
+
+	"github.com/vavallee/bindery/internal/textutil"
 )
 
 // titlesNameDifferentWorks reports whether two titles that already look alike
@@ -63,20 +67,57 @@ func titlesNameDifferentWorks(a, b string) bool {
 // titleExclusiveWords returns the digit-free significant words each title has
 // that the other does not, in order of appearance.
 func titleExclusiveWords(a, b string) (aOnly, bOnly []string) {
-	a, b = withoutAnnotations(a), withoutAnnotations(b)
-	aSet, bSet := titleTokenSet(a), titleTokenSet(b)
-	collect := func(own, other map[string]bool, title string) []string {
+	aWords, bWords := guardWords(withoutAnnotations(a)), guardWords(withoutAnnotations(b))
+	aSet, bSet := make(map[string]bool, len(aWords)), make(map[string]bool, len(bWords))
+	for _, w := range aWords {
+		aSet[w] = true
+	}
+	for _, w := range bWords {
+		bSet[w] = true
+	}
+	collect := func(words []string, other map[string]bool) []string {
 		var out []string
-		seen := make(map[string]bool, len(own))
-		for _, w := range titleSigTokens(title) {
-			if own[w] && !other[w] && !seen[w] && !titleFillerWords[w] && !strings.ContainsFunc(w, unicode.IsDigit) {
+		seen := make(map[string]bool, len(words))
+		for _, w := range words {
+			if !other[w] && !seen[w] && !titleFillerWords[w] && !strings.ContainsFunc(w, unicode.IsDigit) {
 				seen[w] = true
 				out = append(out, w)
 			}
 		}
 		return out
 	}
-	return collect(aSet, bSet, a), collect(bSet, aSet, b)
+	return collect(aWords, bSet), collect(bWords, aSet)
+}
+
+// guardWords is a title's significant words in the guard's own alphabet: the
+// title-comparison tokens, further folded so a ligature or a letter NFD leaves
+// whole reads as its ASCII spelling ("Æsop" and "Aesop", "Øya" and "Oya",
+// "ﬁre" and "fire"), and mapped through titleWordEquivalents. The extra fold
+// belongs to this guard only, which can only add rejections, so a spelling it
+// fails to equate costs a file its match and never gives it a wrong one.
+func guardWords(title string) []string {
+	toks := titleSigTokens(title)
+	for i, w := range toks {
+		w = textutil.FoldNonDecomposableLatin(strings.ToLower(norm.NFKC.String(w)))
+		if c, ok := titleWordEquivalents[w]; ok {
+			w = c
+		}
+		toks[i] = w
+	}
+	return toks
+}
+
+// titleWordEquivalents maps words that are the same word to one spelling:
+// abbreviations a catalogue and a file name write differently ("Dr. Jekyll and
+// Mr. Hyde" and "Doctor Jekyll and Mister Hyde"), and the one regional pair
+// that names a famous work two ways (Philosopher's Stone in the UK, Sorcerer's
+// Stone in the US, with the possessive's apostrophe already folded away). Keep
+// this minimal. It is not a thesaurus: a word belongs here only when two
+// editions of one book are known to disagree on it and edit distance cannot
+// bridge them. Every other alternate title stays unmatched and waits on Import.
+var titleWordEquivalents = map[string]string{
+	"dr": "doctor", "mr": "mister", "mrs": "missus", "st": "saint", "jr": "junior", "vs": "versus",
+	"philosopher": "sorcerer", "philosophers": "sorcerers",
 }
 
 // annotationRe matches a bracketed run of a title: the series note of
