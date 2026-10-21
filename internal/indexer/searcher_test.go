@@ -2120,6 +2120,12 @@ func TestFilterRelevantSingleKeywordAlternateTitle(t *testing.T) {
 			want:    true,
 		},
 		{
+			name:  "semicolon or, no article",
+			title: "Candide", author: "Voltaire",
+			release: "Voltaire - Candide; or Optimism (epub)",
+			want:    true,
+		},
+		{
 			name:  "two keyword title",
 			title: "Moby-Dick", author: "Herman Melville",
 			release: "Herman Melville - Moby-Dick; or, The Whale (epub)",
